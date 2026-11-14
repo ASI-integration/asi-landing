@@ -1,0 +1,88 @@
+{
+  "metadata": {
+    "purpose": "City-specific 2024-2025 hotel and visitor evidence for provisional comparison, NOT room profitability",
+    "reference_date": "2026-11-04",
+    "comparability": "Moscow NF Group hotel subset differs from citywide NYC CoStar benchmark; source methods vary. Do not infer micro-cabin performance or profit.",
+    "source_scope": "verified city-specific public facts, two cities only"
+  },
+  "cities": [
+    {
+      "country_code": "RU",
+      "city_code": "2485",
+      "display_name": "Moscow",
+      "hotel_occupancy_pct": {
+        "2024": 76,
+        "2025": 73.7
+      },
+      "adr_2025": {
+        "value": 10400,
+        "currency": "RUB"
+      },
+      "city_visitors_millions": {
+        "2024": 26,
+        "2025": 26.5
+      },
+      "city_domestic_visitors_millions_2025": 23.7,
+      "seasonality_monthly_pct": null,
+      "property_rent": null,
+      "permitted_hotel_conversion": null,
+      "profit_margin": null,
+      "sources": [
+        {
+          "metric": "hotel_occupancy_2024_and_ADR_2024",
+          "url": "https://kf.expert/publish/rynok-gostinichnoj-nedvizhimosti-moskva-2024",
+          "publisher": "NF Group"
+        },
+        {
+          "metric": "hotel_occupancy_2025_and_ADR_2025",
+          "url": "https://kf.expert/publish/rynok-gostinichnoj-nedvizhimosti-moskva-2025",
+          "publisher": "NF Group"
+        },
+        {
+          "metric": "visitors_2025_2024_domestic",
+          "url": "https://www.mskagency.ru/materials/3539790",
+          "publisher": "Moscow City News Agency, quoting Moscow mayor"
+        }
+      ]
+    },
+    {
+      "country_code": "US",
+      "city_code": "8354",
+      "display_name": "New York City",
+      "hotel_occupancy_pct": {
+        "2024": 84.3,
+        "2025": 84.1
+      },
+      "adr_2025": {
+        "value": 333.71,
+        "currency": "USD"
+      },
+      "city_visitors_millions": {
+        "2024": 64.5,
+        "2025": 65
+      },
+      "city_domestic_visitors_millions_2025": 52.4,
+      "seasonality_monthly_pct": null,
+      "property_rent": null,
+      "permitted_hotel_conversion": null,
+      "profit_margin": null,
+      "sources": [
+        {
+          "metric": "hotel_occupancy_2025_2024_and_ADR_2025",
+          "url": "https://www.costar.com/it-it/prodotti/str-benchmark/risorse/comunicati-stampa/us-hotels-report-first-full-year-occupancy-revpar-declines-2020",
+          "publisher": "CoStar/STR"
+        },
+        {
+          "metric": "visitors_2025_domestic_visitors",
+          "url": "https://www.business.nyctourism.com/press-media/press-releases/NYC-Tourism-Annual-Report-March-2026?pubDate=20260419",
+          "publisher": "NYC Tourism + Conventions"
+        },
+        {
+          "metric": "city_visitors_2024",
+          "url": "https://comptroller.nyc.gov/reports/comments-on-new-york-citys-fiscal-year-2027-adopted-budget/",
+          "publisher": "NYC Comptroller"
+        }
+      ]
+    }
+  ]
+}

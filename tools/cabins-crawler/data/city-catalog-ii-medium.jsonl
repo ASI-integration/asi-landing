@@ -1,0 +1,90 @@
+{"city": "Osaka", "country": "Japan", "country_code": "JP", "research_tier": "II-MEDIUM", "global_score": 70.58, "population_2025": 12964145, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Seoul", "country": "South Korea", "country_code": "KR", "research_tier": "II-MEDIUM", "global_score": 69.39, "population_2025": 22490482, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Mecca", "country": "Saudi Arabia", "country_code": "SA", "research_tier": "II-MEDIUM", "global_score": 68.82, "population_2025": 1692152, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Nagoya", "country": "Japan", "country_code": "JP", "research_tier": "II-MEDIUM", "global_score": 68.16, "population_2025": 7146160, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Krung Thep Maha Nakhon (Bangkok)", "country": "Thailand", "country_code": "TH", "research_tier": "II-MEDIUM", "global_score": 67.3, "population_2025": 18180280, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Singapore", "country": "Singapore", "country_code": "SG", "research_tier": "II-MEDIUM", "global_score": 64.44, "population_2025": 4963998, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Naples", "country": "Italy", "country_code": "IT", "research_tier": "II-MEDIUM", "global_score": 63.64, "population_2025": 2767923, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Fukuoka", "country": "Japan", "country_code": "JP", "research_tier": "II-MEDIUM", "global_score": 63.41, "population_2025": 2225078, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Sapporo", "country": "Japan", "country_code": "JP", "research_tier": "II-MEDIUM", "global_score": 62.91, "population_2025": 1964519, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Tamar (Hong Kong)", "country": "China, Hong Kong SAR", "country_code": "HK", "research_tier": "II-MEDIUM", "global_score": 62.44, "population_2025": 4749543, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Jakarta", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 61.99, "population_2025": 41913860, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Sendai", "country": "Japan", "country_code": "JP", "research_tier": "II-MEDIUM", "global_score": 61.09, "population_2025": 1256440, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Kitakyushu", "country": "Japan", "country_code": "JP", "research_tier": "II-MEDIUM", "global_score": 60.92, "population_2025": 1206731, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Hiroshima", "country": "Japan", "country_code": "JP", "research_tier": "II-MEDIUM", "global_score": 60.85, "population_2025": 1185788, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Naha", "country": "Japan", "country_code": "JP", "research_tier": "II-MEDIUM", "global_score": 60.4, "population_2025": 1060017, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Berlin", "country": "Germany", "country_code": "DE", "research_tier": "II-MEDIUM", "global_score": 60.19, "population_2025": 3560908, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Birmingham", "country": "United Kingdom", "country_code": "GB", "research_tier": "II-MEDIUM", "global_score": 60.16, "population_2025": 2631757, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Turin", "country": "Italy", "country_code": "IT", "research_tier": "II-MEDIUM", "global_score": 60.07, "population_2025": 1150975, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Manchester", "country": "United Kingdom", "country_code": "GB", "research_tier": "II-MEDIUM", "global_score": 60.01, "population_2025": 2535427, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Valencia", "country": "Spain", "country_code": "ES", "research_tier": "II-MEDIUM", "global_score": 60.0, "population_2025": 1390045, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Ar-Riyāḑ (Riyadh)", "country": "Saudi Arabia", "country_code": "SA", "research_tier": "II-MEDIUM", "global_score": 59.92, "population_2025": 6916417, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Essen", "country": "Germany", "country_code": "DE", "research_tier": "II-MEDIUM", "global_score": 59.09, "population_2025": 2717087, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Jeddah", "country": "Saudi Arabia", "country_code": "SA", "research_tier": "II-MEDIUM", "global_score": 57.98, "population_2025": 4284080, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Amsterdam", "country": "Netherlands", "country_code": "NL", "research_tier": "II-MEDIUM", "global_score": 57.65, "population_2025": 1235985, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Macau - Zhuhai", "country": "China, Macao SAR", "country_code": "MO", "research_tier": "II-MEDIUM", "global_score": 57.45, "population_2025": 2203065, "risk_gate": "COUNTRY_SAFETY_EVIDENCE_REVIEW"}
+{"city": "Munich", "country": "Germany", "country_code": "DE", "research_tier": "II-MEDIUM", "global_score": 57.45, "population_2025": 1815022, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Hamburg", "country": "Germany", "country_code": "DE", "research_tier": "II-MEDIUM", "global_score": 57.33, "population_2025": 1759377, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Liverpool", "country": "United Kingdom", "country_code": "GB", "research_tier": "II-MEDIUM", "global_score": 57.06, "population_2025": 1227470, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Toronto", "country": "Canada", "country_code": "CA", "research_tier": "II-MEDIUM", "global_score": 56.95, "population_2025": 5494431, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Lisboa (Lisbon)", "country": "Portugal", "country_code": "PT", "research_tier": "II-MEDIUM", "global_score": 56.85, "population_2025": 1913798, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Busan", "country": "South Korea", "country_code": "KR", "research_tier": "II-MEDIUM", "global_score": 56.54, "population_2025": 3263221, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Leeds", "country": "United Kingdom", "country_code": "GB", "research_tier": "II-MEDIUM", "global_score": 56.49, "population_2025": 1065607, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Wien (Vienna)", "country": "Austria", "country_code": "AT", "research_tier": "II-MEDIUM", "global_score": 56.44, "population_2025": 2031326, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Athína (Athens)", "country": "Greece", "country_code": "GR", "research_tier": "II-MEDIUM", "global_score": 56.41, "population_2025": 3101979, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Bandung", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 55.88, "population_2025": 8909104, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Antalya", "country": "Türkiye", "country_code": "TR", "research_tier": "II-MEDIUM", "global_score": 55.87, "population_2025": 1273822, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Los Angeles", "country": "United States of America", "country_code": "US", "research_tier": "II-MEDIUM", "global_score": 55.64, "population_2025": 12740420, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Cologne", "country": "Germany", "country_code": "DE", "research_tier": "II-MEDIUM", "global_score": 55.51, "population_2025": 1125292, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Dammam", "country": "Saudi Arabia", "country_code": "SA", "research_tier": "II-MEDIUM", "global_score": 55.51, "population_2025": 2335647, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Daegu", "country": "South Korea", "country_code": "KR", "research_tier": "II-MEDIUM", "global_score": 55.18, "population_2025": 2334446, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Surabaya", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 54.81, "population_2025": 6843503, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Lyon", "country": "France", "country_code": "FR", "research_tier": "II-MEDIUM", "global_score": 54.66, "population_2025": 1202985, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Warszawa (Warsaw)", "country": "Poland", "country_code": "PL", "research_tier": "II-MEDIUM", "global_score": 54.43, "population_2025": 1882756, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Montreal", "country": "Canada", "country_code": "CA", "research_tier": "II-MEDIUM", "global_score": 54.01, "population_2025": 2668723, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Medina", "country": "Saudi Arabia", "country_code": "SA", "research_tier": "II-MEDIUM", "global_score": 53.52, "population_2025": 1432287, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Daejeon", "country": "South Korea", "country_code": "KR", "research_tier": "II-MEDIUM", "global_score": 53.43, "population_2025": 1517299, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Gwangju", "country": "South Korea", "country_code": "KR", "research_tier": "II-MEDIUM", "global_score": 53.22, "population_2025": 1441495, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Medan", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 52.87, "population_2025": 4245895, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "København (Copenhagen)", "country": "Denmark", "country_code": "DK", "research_tier": "II-MEDIUM", "global_score": 52.72, "population_2025": 1229370, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Vancouver", "country": "Canada", "country_code": "CA", "research_tier": "II-MEDIUM", "global_score": 52.2, "population_2025": 1707865, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Rotterdam", "country": "Netherlands", "country_code": "NL", "research_tier": "II-MEDIUM", "global_score": 51.88, "population_2025": 1023590, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Tasikmalaya", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 51.22, "population_2025": 2827255, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Yogyakarta", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 51.17, "population_2025": 2793747, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Semarang", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 51.0, "population_2025": 2679349, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Houston", "country": "United States of America", "country_code": "US", "research_tier": "II-MEDIUM", "global_score": 50.88, "population_2025": 3955046, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Calgary", "country": "Canada", "country_code": "CA", "research_tier": "II-MEDIUM", "global_score": 50.75, "population_2025": 1197110, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Chicago", "country": "United States of America", "country_code": "US", "research_tier": "II-MEDIUM", "global_score": 50.59, "population_2025": 3683385, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Denpasar", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 50.47, "population_2025": 2352734, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "București (Bucharest)", "country": "Romania", "country_code": "RO", "research_tier": "II-MEDIUM", "global_score": 50.36, "population_2025": 1909536, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Makassar", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 50.3, "population_2025": 2255088, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Budapest", "country": "Hungary", "country_code": "HU", "research_tier": "II-MEDIUM", "global_score": 50.26, "population_2025": 1609260, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Washington, D.C.", "country": "United States of America", "country_code": "US", "research_tier": "II-MEDIUM", "global_score": 50.11, "population_2025": 3270018, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Palembang", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 50.07, "population_2025": 2132576, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "San Francisco", "country": "United States of America", "country_code": "US", "research_tier": "II-MEDIUM", "global_score": 49.97, "population_2025": 3163486, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Tarogong", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 49.64, "population_2025": 1917036, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Miami", "country": "United States of America", "country_code": "US", "research_tier": "II-MEDIUM", "global_score": 49.64, "population_2025": 2912486, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Malang", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 49.6, "population_2025": 1899616, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Dublin", "country": "Ireland", "country_code": "IE", "research_tier": "II-MEDIUM", "global_score": 49.38, "population_2025": 1142650, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Ankara", "country": "Türkiye", "country_code": "TR", "research_tier": "II-MEDIUM", "global_score": 49.31, "population_2025": 3612251, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Slawi", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 49.23, "population_2025": 1733437, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Casablanca", "country": "Morocco", "country_code": "MA", "research_tier": "II-MEDIUM", "global_score": 48.87, "population_2025": 4457471, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Cirebon", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 48.82, "population_2025": 1566821, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Surakarta", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 48.74, "population_2025": 1538599, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Batam City", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 48.64, "population_2025": 1500354, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Denver", "country": "United States of America", "country_code": "US", "research_tier": "II-MEDIUM", "global_score": 48.62, "population_2025": 2265994, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Philadelphia", "country": "United States of America", "country_code": "US", "research_tier": "II-MEDIUM", "global_score": 48.56, "population_2025": 2232420, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Las Vegas", "country": "United States of America", "country_code": "US", "research_tier": "II-MEDIUM", "global_score": 48.47, "population_2025": 2183655, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Purwokerto", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 48.15, "population_2025": 1331010, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Samarinda", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 48.14, "population_2025": 1325554, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Izmir", "country": "Türkiye", "country_code": "TR", "research_tier": "II-MEDIUM", "global_score": 48.05, "population_2025": 2650237, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Phoenix", "country": "United States of America", "country_code": "US", "research_tier": "II-MEDIUM", "global_score": 48.05, "population_2025": 1972021, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "San Diego", "country": "United States of America", "country_code": "US", "research_tier": "II-MEDIUM", "global_score": 47.93, "population_2025": 1915114, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Pekanbaru", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 47.76, "population_2025": 1208872, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Bandar Lampung", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 47.68, "population_2025": 1184054, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Padang", "country": "Indonesia", "country_code": "ID", "research_tier": "II-MEDIUM", "global_score": 47.68, "population_2025": 1184342, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Bursa", "country": "Türkiye", "country_code": "TR", "research_tier": "II-MEDIUM", "global_score": 47.44, "population_2025": 2281622, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "San Antonio", "country": "United States of America", "country_code": "US", "research_tier": "II-MEDIUM", "global_score": 47.41, "population_2025": 1686163, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Boston", "country": "United States of America", "country_code": "US", "research_tier": "II-MEDIUM", "global_score": 47.3, "population_2025": 1639797, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Dallas", "country": "United States of America", "country_code": "US", "research_tier": "II-MEDIUM", "global_score": 47.0, "population_2025": 1521118, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Moskva (Moscow)", "country": "Russia", "country_code": "RU", "research_tier": "II-MEDIUM", "global_score": 20.99, "population_2025": 14524753, "risk_gate": "COUNTRY_RISK_REVIEW"}
