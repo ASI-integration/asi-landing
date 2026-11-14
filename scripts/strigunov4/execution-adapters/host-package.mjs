@@ -17,7 +17,8 @@ export async function buildRuntimeClosure({repository,output}){
   async function copy(relative){
     const name=path.posix.normalize(relative);
     must((/^strigunov4\/[A-Za-z0-9_./-]+\.mjs$/.test(name)||
-      ['global-dispatcher/dispatcher.mjs','global-dispatcher/product-adapters.mjs'].includes(name))&&
+      ['global-dispatcher/dispatcher.mjs','global-dispatcher/product-adapters.mjs',
+       'global-dispatcher/task-intake.mjs'].includes(name))&&
       !name.split('/').includes('..'),'PACKAGE_IMPORT_SCOPE');
     if(Object.hasOwn(files,name))return;
     const source=path.join(scripts,name);
