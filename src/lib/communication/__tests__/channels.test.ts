@@ -1,4 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { evaluateActionSafety } from '../action';
+import { CommunicationContext, EscalationReason, IntentCategory } from '../types';
 import { getChannelAdapter } from '../channels';
 import {
   COMMUNICATION_CHANNEL_FOUNDATION,
@@ -11,6 +13,59 @@ vi.mock('../../telegram', () => ({
 }));
 
 describe('Channel Adapters', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    mockReplyToTelegram.mockClear();
+  });
+
+  const guestContext = (confidence: number): CommunicationContext => ({
+    chatId: 4242,
+    memory: { role: 'guest', lastMessageAt: new Date('2026-01-01T00:00:00Z') },
+    intentResult: { intent: IntentCategory.GeneralQuestion, confidence },
+    reservation: { status: 'matched', confidence: 1 },
+    knowledge: { universalPolicy: 'Never fabricate property information.' },
+    recentMessages: [],
+  });
+
+  it.each([NaN, Infinity, -Infinity, -0.1, 1.1])(
+    'routes invalid intent confidence %s to operator without mutating context',
+    (confidence) => {
+      const context = guestContext(confidence);
+      const before = structuredClone(context);
+      expect(evaluateActionSafety(context, 'Здравствуйте')).toEqual({
+        safe: false,
+        action: 'escalate_to_operator',
+        reason: 'Intent confidence is invalid. Operator review required.',
+        escalationReason: EscalationReason.LowIntentConfidence,
+      });
+      expect(context).toEqual(before);
+    },
+  );
+
+  it('keeps emergency escalation ahead of invalid classifier confidence', () => {
+    expect(evaluateActionSafety(guestContext(NaN), 'fire in kitchen')).toMatchObject({
+      safe: false,
+      action: 'escalate_to_operator',
+      escalationReason: EscalationReason.UrgentIssue,
+    });
+  });
+
+  it('never sends a guest message through Telegram during a no-send dry-run', async () => {
+    vi.stubEnv('ASI_SYNTHETIC_NO_SEND', 'YES');
+    // Keep this regression entirely in memory, including when run in synthetic CI.
+    vi.stubEnv('STRIGUNOV_SYNTHETIC_ONLY', 'NO');
+    mockReplyToTelegram.mockClear();
+    const context = guestContext(0.9);
+    expect(evaluateActionSafety(context, 'Здравствуйте')).toMatchObject({
+      safe: true,
+      action: 'send_informational_reply',
+    });
+    await expect(
+      getChannelAdapter('telegram').sendMessage(String(context.chatId), 'Здравствуйте!'),
+    ).rejects.toThrow('external_effects_disabled');
+    expect(mockReplyToTelegram).not.toHaveBeenCalled();
+  });
+
   it('formats telegram responses tightly', () => {
     const adapter = getChannelAdapter('telegram');
     const result = adapter.formatResponse('  Hello! We have received your request.  ', {});

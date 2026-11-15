@@ -1,6 +1,5 @@
 import {
   ActionSafetyResult,
-  ActionType,
   CommunicationContext,
   EscalationReason,
   IntentCategory,
@@ -36,6 +35,16 @@ export function evaluateActionSafety(
       action: 'escalate_to_operator',
       reason: 'Urgent issue detected. Escalating to operator.',
       escalationReason: EscalationReason.UrgentIssue,
+    };
+  }
+
+  // Invalid classifier output must never authorize an automatic reply/action.
+  if (!Number.isFinite(intentResult.confidence) || intentResult.confidence < 0 || intentResult.confidence > 1) {
+    return {
+      safe: false,
+      action: 'escalate_to_operator',
+      reason: 'Intent confidence is invalid. Operator review required.',
+      escalationReason: EscalationReason.LowIntentConfidence,
     };
   }
 
