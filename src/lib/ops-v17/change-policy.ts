@@ -40,10 +40,10 @@ export function parseOwnerChange(body: unknown): OwnerChangeInput {
     const limit = key.toLowerCase().endsWith('rule') ? 2000 : 300;
     if (value.length > limit) throw new Error('Значение поля слишком длинное.');
     clean[key] = value.trim();
-    if ((key === 'checkInTime' || key === 'checkOutTime') && clean[key] !== '' && !/^([01]\\d|2[0-3]):[0-5]\\d$/.test(clean[key])) {
+    if ((key === 'checkInTime' || key === 'checkOutTime') && clean[key] !== '' && !/^([01]\d|2[0-3]):[0-5]\d$/.test(clean[key])) {
       throw new Error('Время должно быть в формате ЧЧ:ММ.');
     }
-    if (key === 'email' && clean[key] && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(clean[key])) {
+    if (key === 'email' && clean[key] && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean[key])) {
       throw new Error('Некорректный email.');
     }
   }
