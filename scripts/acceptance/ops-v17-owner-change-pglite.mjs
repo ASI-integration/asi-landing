@@ -14,7 +14,7 @@ try {
   await db.exec(`
     CREATE ROLE anon;
     CREATE ROLE authenticated;
-    CREATE ROLE service_role;
+    CREATE ROLE service_role BYPASSRLS;
     CREATE TABLE public.ops_v17_onboardings (
       id uuid PRIMARY KEY, account_id text NOT NULL UNIQUE,
       current_step text NOT NULL DEFAULT 'business',
@@ -76,6 +76,9 @@ try {
   );
 
   console.log('PGLITE_SQL_SMOKE_PASS: atomic apply, readback, replay, conflict, audit, Cyrillic, external gate, privilege boundary');
+} catch (error) {
+  console.error('PGLITE_SQL_SMOKE_FAILED:', error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
 } finally {
   await db.close();
 }
