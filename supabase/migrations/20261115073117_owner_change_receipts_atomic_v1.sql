@@ -52,8 +52,8 @@ BEGIN
      OR p_section NOT IN ('business','owner','operations')
      OR jsonb_typeof(p_values) IS DISTINCT FROM 'object'
      OR jsonb_typeof(p_expected) IS DISTINCT FROM 'object'
-     OR octet_length(p_values::text) > 5000
-     OR octet_length(p_expected::text) > 8000 THEN
+     OR octet_length(p_values::text) > 40000
+     OR octet_length(p_expected::text) > 60000 THEN
     RAISE EXCEPTION 'invalid_or_unauthorized_change' USING ERRCODE='22023';
   END IF;
 
