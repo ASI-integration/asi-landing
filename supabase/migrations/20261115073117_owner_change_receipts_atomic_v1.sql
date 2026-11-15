@@ -72,6 +72,12 @@ BEGIN
     RAISE EXCEPTION 'invalid_change_fields' USING ERRCODE='22023';
   END IF;
 
+  -- Create a minimal owner intake row when no prior onboarding exists. The
+  -- account id is authenticated and server-derived; no canonical property is fabricated.
+  INSERT INTO public.ops_v17_onboardings (id, account_id, current_step, data, progress)
+  VALUES (pg_catalog.gen_random_uuid(), p_account_id, 'business', '{}'::jsonb, 0)
+  ON CONFLICT (account_id) DO NOTHING;
+
   -- The account row is the serialization/ownership boundary; no client-selected account is trusted by the API.
   SELECT id, data INTO v_onboarding_id, v_data
   FROM public.ops_v17_onboardings
