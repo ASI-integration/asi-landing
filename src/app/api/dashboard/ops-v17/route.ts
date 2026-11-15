@@ -17,12 +17,12 @@ async function requireOwnerWorkspace() {
   return { session: auth.session, accountId };
 }
 
-export async function GET(req: Request) {
+export async function GET(req?: Request) {
   const auth = await requireOwnerWorkspace();
   if ('error' in auth) return auth.error;
   // Reading owner-saved drafts must not require verified physical property links.
   // The existing full-readiness route remains unchanged for launch checks.
-  if (new URL(req.url).searchParams.get('view') === 'intake') {
+  if (req && new URL(req.url).searchParams.get('view') === 'intake') {
     const onboarding = await loadOnboarding(auth.accountId);
     return NextResponse.json({ ok: true, workspace: onboarding ? { onboarding } : null });
   }
