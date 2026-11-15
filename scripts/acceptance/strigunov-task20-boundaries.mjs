@@ -11,6 +11,33 @@ const EXPECTED_CASES=Object.freeze([
 ]);
 const isObject=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 const sha=x=>typeof x==='string'&&/^[a-f0-9]{40}$/.test(x);
+const EFFECTIVE_NO_SEND=Object.freeze({
+ EMAIL_AUTO_SEND:'false',EMAIL_DRAFT_ONLY:'true',DRY_RUN_TELEGRAM_OUTBOUND:'true',
+ ALLOW_REAL_TELEGRAM_SYNTHETIC:'false',YOOKASSA_ENABLED:'false',
+ ASI_SYNTHETIC_NO_SEND:'YES',ASI_APP_ROOT:'/var/www/asi-staging/current'
+});
+const PHYSICAL_GATES=Object.freeze(['G2','G3','G4','G5','G6']);
+/**
+ * Inspect reported effective runtime settings, human operator identity and staging
+ * SHA without reading a host or environment. File/config intent is not effective
+ * runtime evidence. Even a structural match cannot accept any physical gate:
+ * independent run-bound evidence and separate owner acceptance remain required.
+ */
+export function inspectPhysicalAcceptanceBoundaries(e,expectedSha){
+ const reasons=[];
+ if(!sha(expectedSha)||!isObject(e)||e.stagingSha!==expectedSha)
+  reasons.push('STAGING_SHA_MISMATCH');
+ const flags=e?.effectiveFlags;
+ if(!isObject(flags)||Object.entries(EFFECTIVE_NO_SEND).some(([key,value])=>
+  !Object.hasOwn(flags,key)||flags[key]!==value))
+  reasons.push('EFFECTIVE_NO_SEND_NOT_PROVEN');
+ if(typeof e?.operatorIdentity!=='string'||!e.operatorIdentity.trim())
+  reasons.push('OPERATOR_IDENTITY_MISSING');
+ return scoped(reasons.length?'HOLD':'STRUCTURE_MATCH_ONLY',reasons,{
+  accepted:false,readyForDemo:false,
+  gates:Object.freeze(Object.fromEntries(PHYSICAL_GATES.map(gate=>[gate,'NOT_ACCEPTED'])))
+ });
+}
 function scoped(status,reasons,more={}){
  return Object.freeze({status,scope:'SOURCE_ONLY_NON_AUTHORIZING',canApprove:false,canSend:false,
   reasons:Object.freeze([...reasons]),...more});
