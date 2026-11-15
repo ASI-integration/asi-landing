@@ -3,6 +3,50 @@ import type { BookingOpsAutomationDecision, BookingOpsRecord } from './types';
 import { buildBookingOpsAutomationPatch, evaluateBookingOpsAutomation } from './decision-engine';
 import { updateBookingOpsRecord } from './repository';
 
+export type BookingOpsAutomationRequest = {
+  requestId: string;
+  accountId: string;
+  propertyId: string;
+};
+
+export type BookingOpsAutomationRequestIntakeResult = {
+  sourceOnly: true;
+} & (
+  | { accepted: true; request: BookingOpsAutomationRequest }
+  | { accepted: false; code: 'invalid_request' | 'scope_mismatch' | 'duplicate_unacknowledged' }
+);
+
+/** Validation only: acceptance does not create a booking, CRM work or an execution lease.
+ * The caller supplies the authorized operator scope and its snapshot of prior work.
+ * This source-only check is not durable deduplication or permission to execute.
+ */
+export function intakeBookingOpsAutomationRequest(
+  request: BookingOpsAutomationRequest,
+  operatorScope: { accountId: string; propertyId: string },
+  existingWork: ReadonlyArray<BookingOpsAutomationRequest & { acknowledged: boolean }>,
+): BookingOpsAutomationRequestIntakeResult {
+  const normalized = {
+    requestId: request.requestId.trim(),
+    accountId: request.accountId.trim(),
+    propertyId: request.propertyId.trim(),
+  };
+  if (!normalized.requestId || !normalized.accountId || !normalized.propertyId
+    || normalized.accountId === 'legacy') {
+    return { sourceOnly: true, accepted: false, code: 'invalid_request' };
+  }
+  if (normalized.accountId !== operatorScope.accountId.trim()
+    || normalized.propertyId !== operatorScope.propertyId.trim()) {
+    return { sourceOnly: true, accepted: false, code: 'scope_mismatch' };
+  }
+  if (existingWork.some((work) => work.accountId.trim() === normalized.accountId
+    && work.propertyId.trim() === normalized.propertyId
+    && work.requestId.trim() === normalized.requestId
+    && work.acknowledged !== true)) {
+    return { sourceOnly: true, accepted: false, code: 'duplicate_unacknowledged' };
+  }
+  return { sourceOnly: true, accepted: true, request: normalized };
+}
+
 function withDecision(
   record: BookingOpsRecord,
   decision: BookingOpsAutomationDecision,
