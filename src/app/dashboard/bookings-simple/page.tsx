@@ -64,7 +64,7 @@ export default function SimpleBookingsPage() {
   const attention = real.filter((record) => record.isBlocked).length;
   const now = Date.now();
   const upcoming = real.filter((record) => {
-    if (!record.checkInAt || record.opsStatus === 'completed' || record.opsStatus === 'cancelled') return false;
+    if (!record.checkInAt) return false;
     const at = new Date(record.checkInAt).getTime();
     return Number.isFinite(at) && at >= now && at <= now + 7 * 86400000;
   }).length;
