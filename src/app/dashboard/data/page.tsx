@@ -121,10 +121,9 @@ export default function DataAndChangesPage() {
         }
         throw new Error('save_failed');
       }
-      setBaseline((previous) => ({
-        ...previous,
-        [section]: { ...(previous[section] ?? {}), ...values },
-      }));
+      // Re-read the committed values instead of trusting the original input
+      // (which may be normalized server-side or changed concurrently).
+      await load();
       setFeedback(result.result.explanation || 'Внутреннее изменение подтверждено.');
       await loadHistory();
     } catch {
