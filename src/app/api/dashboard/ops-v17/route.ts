@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireCabinetSession } from '@/lib/cabinet/api-auth';
 import { resolveOwnerAccountIdForUser } from '@/lib/accounts';
-import { getWorkspace, saveOnboardingStep } from '@/lib/ops-v17/service';
+import { getWorkspace, loadOnboarding, saveOnboardingStep } from '@/lib/ops-v17/service';
 import { onboardingSteps, type OnboardingData, type OnboardingStep } from '@/lib/ops-v17/types';
 
 export const runtime = 'nodejs';
@@ -17,9 +17,15 @@ async function requireOwnerWorkspace() {
   return { session: auth.session, accountId };
 }
 
-export async function GET() {
+export async function GET(req?: Request) {
   const auth = await requireOwnerWorkspace();
   if ('error' in auth) return auth.error;
+  // Reading owner-saved drafts must not require verified physical property links.
+  // The existing full-readiness route remains unchanged for launch checks.
+  if (req && new URL(req.url).searchParams.get('view') === 'intake') {
+    const onboarding = await loadOnboarding(auth.accountId);
+    return NextResponse.json({ ok: true, workspace: onboarding ? { onboarding } : null });
+  }
   return NextResponse.json({ ok: true, workspace: await getWorkspace(auth.accountId) });
 }
 
