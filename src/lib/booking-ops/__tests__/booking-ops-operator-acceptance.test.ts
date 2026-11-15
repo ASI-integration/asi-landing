@@ -102,7 +102,7 @@ function alert(overrides: Record<string, unknown> = {}) {
   return {
     id: 'alert-1', accountId: 'account-a', bookingId: 'booking-1', propertyId: 'property-1',
     alertCode: 'GUEST_DATA_INCOMPLETE', incidentFamily: 'GUEST_DATA', sourceDomain: 'guest', sourceGate: 'guest_data_completed',
-    severity: 'warning', status: 'open', title: 'Missing data', description: 'Action required', recommendedAction: 'Request data',
+    severity: 'warning', status: 'open', revision: 1, title: 'Missing data', description: 'Action required', recommendedAction: 'Request data',
     dedupeKey: 'guest-data', detectedAt: '2026-07-13T09:00:00Z', deadlineAt: null, nextCheckInAt: null,
     acknowledgedAt: null, acknowledgedBy: null, resolvedAt: null, resolutionReason: null, metadata: {},
     ...overrides,
@@ -121,7 +121,7 @@ beforeEach(() => {
 
 describe('Booking Ops operator and alert acceptance', () => {
   it('acknowledges missing guest data, creates one draft-only request, and preserves the operator audit', async () => {
-    const acknowledged = await applyOperatorAlertAction({ accountId: 'account-a', alertId: 'alert-1', action: 'acknowledge', actorId: 'operator-1', canOverrideHighRisk: false });
+    const acknowledged = await applyOperatorAlertAction({ accountId: 'account-a', alertId: 'alert-1', action: 'acknowledge', actorId: 'operator-1', expectedRevision: 1, canOverrideHighRisk: false });
     const request = { accountId: 'account-a', alertId: 'alert-1', action: 'request_missing_data' as const, actorId: 'operator-1', canOverrideHighRisk: false, missingDataReason: 'guest_data' };
     const first = await applyOperatorAlertAction({ ...request, idempotencyKey: 'request-1' });
     const second = await applyOperatorAlertAction({ ...request, idempotencyKey: 'request-2' });
@@ -138,7 +138,7 @@ describe('Booking Ops operator and alert acceptance', () => {
 
   it('resolves a cleared payment condition automatically and keeps its acknowledged history auditable', async () => {
     mocks.state.alert = alert({ sourceDomain: 'payment', sourceGate: 'deposit_received', alertCode: 'DEPOSIT_NOT_RECEIVED', incidentFamily: 'DEPOSIT' });
-    await applyOperatorAlertAction({ accountId: 'account-a', alertId: 'alert-1', action: 'acknowledge', actorId: 'operator-1', canOverrideHighRisk: false });
+    await applyOperatorAlertAction({ accountId: 'account-a', alertId: 'alert-1', action: 'acknowledge', actorId: 'operator-1', expectedRevision: 1, canOverrideHighRisk: false });
     const acknowledgedAt = mocks.state.alert?.acknowledgedAt;
     mocks.state.resolveOnReconcile = true;
     mocks.state.cleaning = [{ id: 'cleaning-1', booking_id: 'booking-1', property_id: 'property-1', status: 'assigned' }];

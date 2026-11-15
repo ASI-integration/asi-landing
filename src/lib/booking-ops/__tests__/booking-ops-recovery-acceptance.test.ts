@@ -80,7 +80,23 @@ const database = vi.hoisted(() => {
       return this.execute().then(resolve, reject);
     }
   }
-  return { state, supabase: { from: (table: string) => new Query(table) } };
+  return { state, supabase: {
+    from: (table: string) => new Query(table),
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      if (name === 'g0_begin_automation' || name === 'g0_end_automation') {
+        return { data: true, error: null };
+      }
+      if (name === 'g0_acknowledge_operator_alert') {
+        const row = state.alerts.find((item) => item.id === args.p_alert && item.account_id === args.p_account
+          && Number(item.revision ?? 1) === Number(args.p_revision));
+        if (!row) return { data: null, error: null };
+        Object.assign(row, { status: 'acknowledged', acknowledged_by: args.p_actor,
+          acknowledged_at: '2026-07-13T09:01:00.000Z', revision: Number(row.revision ?? 1) + 1 });
+        return { data: { ...row }, error: null };
+      }
+      throw new Error('unexpected_test_rpc:' + name);
+    },
+  } };
 });
 
 vi.mock('@/lib/supabase', () => ({ supabase: database.supabase }));
@@ -99,7 +115,7 @@ const domainEvent = {
 };
 
 beforeEach(() => {
-  database.state.records = [{ id: 'booking-1', account_id: 'account-a', property_id: 'property-1', reservation_metadata: { acceptance_safe: true } }];
+  database.state.records = [{ id: 'booking-1', account_id: 'account-a', property_id: 'property-1', reservation_metadata: { acceptance_safe: true }, automation_paused: false }];
   database.state.events = [];
   database.state.autopilotStates = [];
   database.state.lifecycleStates = [];
@@ -168,7 +184,7 @@ describe('Booking Ops retry and reconciliation acceptance', () => {
   });
 
   it('preserves legacy recovery fallback when no account scope exists', async () => {
-    database.state.records[0] = { id: 'booking-1', account_id: 'legacy', property_id: null, reservation_metadata: { acceptance_safe: true } };
+    database.state.records[0] = { id: 'booking-1', account_id: 'legacy', property_id: null, reservation_metadata: { acceptance_safe: true }, automation_paused: false };
     database.state.events = [{
       id: 'legacy-event', booking_id: 'booking-1', object_id: null, event_type: 'alert.acknowledged',
       actor_type: 'system', actor_id: null, payload: {}, source: 'acceptance', correlation_id: 'legacy-run',
@@ -213,7 +229,7 @@ describe('Booking Ops retry and reconciliation acceptance', () => {
     };
     await reconcileOperatorAlertConditions({ ...input, conditions: [condition], now: '2026-07-13T09:00:00.000Z' });
     const firstId = String(database.state.alerts[0].id);
-    await acknowledgeOperatorAlert('account-a', firstId, 'operator-1');
+    await acknowledgeOperatorAlert('account-a', firstId, 'operator-1', 1);
     await reconcileOperatorAlertConditions({ ...input, conditions: [], now: '2026-07-13T09:10:00.000Z' });
     await reconcileOperatorAlertConditions({ ...input, conditions: [condition], now: '2026-07-13T09:20:00.000Z' });
 
