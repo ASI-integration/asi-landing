@@ -88,21 +88,24 @@ export default function SimpleBookingsPage() {
         {!error && !loading ? (
           <section aria-label="Сводка бронирований" className="grid gap-4 sm:grid-cols-3">
             {[
-              { title: 'Бронирований', value: summary.total },
-              { title: 'Нужно внимание', value: summary.attention },
-              { title: 'Заезды за 7 дней', value: summary.upcoming },
+              { title: 'Загружено бронирований', value: summary.total },
+              { title: 'В выборке нужно внимание', value: summary.attention },
+              { title: 'Заезды в выборке за 7 дней', value: summary.upcoming },
             ].map((stat) => (
               <div key={stat.title} className="rounded-xl border border-slate-200 bg-white p-5">
                 <p className="text-sm text-slate-500">{stat.title}</p>
                 <p className="mt-2 text-3xl font-semibold text-slate-900">{stat.value}</p>
               </div>
             ))}
+            <p className="sm:col-span-3 text-sm text-slate-500" role="note">
+              Показатели рассчитаны по загруженной выборке (не более 200 последних обновлённых бронирований), а не по всему аккаунту.
+            </p>
           </section>
         ) : null}
 
         <section className="rounded-xl border border-slate-200 bg-white p-5 sm:p-7">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-xl font-semibold text-slate-900">Мои бронирования</h2>
+            <h2 className="text-xl font-semibold text-slate-900">Последние бронирования</h2>
             <label className="flex items-center gap-2 text-sm text-slate-600">
               <input type="checkbox" checked={showTest} onChange={(event) => setShowTest(event.target.checked)}
                 className="h-4 w-4" />
