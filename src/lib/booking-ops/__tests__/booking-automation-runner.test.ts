@@ -33,6 +33,7 @@ vi.mock('@/lib/supabase', () => {
       const data = this.data();
       return Promise.resolve({ data: data[0] ?? null, error: null });
     }
+    single() { return this.maybeSingle(); }
     then<TResult1 = { data: Array<Record<string, unknown>>; error: null }, TResult2 = never>(
       onfulfilled?: ((value: { data: Array<Record<string, unknown>>; error: null }) => TResult1 | PromiseLike<TResult1>) | null,
       onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
@@ -47,7 +48,7 @@ import { runBookingOpsAutomationForBooking } from '../booking-automation-runner'
 const ID = '11111111-1111-4111-8111-111111111111';
 function baseRows() {
   state.rows = {
-    booking_ops_records: [{ id: ID, account_id: 'account-1', property_id: 'property-1', document_required: false, contract_required: false, deposit_required: false, mvd_required: false, metadata: {} }],
+    booking_ops_records: [{ id: ID, account_id: 'account-1', property_id: 'property-1', document_required: false, contract_required: false, deposit_required: false, mvd_required: false, metadata: {}, automation_paused: false }],
     accounts: [{ id: 'account-1' }], properties: [{ id: 'property-1', account_id: 'account-1' }], tg_property_knowledge: [],
     booking_lifecycle_gates: [{ id: 'gate-1', booking_id: ID, gate_key: 'booking_received', status: 'completed', metadata: {} }, { id: 'gate-2', booking_id: ID, gate_key: 'property_ready', status: 'completed', metadata: {} }],
     booking_ops_guest_intake_sessions: [{ id: 'intake-1', booking_ops_record_id: ID, intake_status: 'completed', missing_fields: [] }],
@@ -64,12 +65,26 @@ describe('runBookingOpsAutomationForBooking boundaries', () => {
     state.mutations = 0;
     state.scopeMismatchOnGuard = false;
     baseRows();
-    state.rpc.mockResolvedValue({ data: false, error: null });
+    state.rpc.mockImplementation(async (name: string) => ({ data: name === 'g0_begin_automation' || name === 'g0_end_automation', error: null }));
   });
 
   it('rejects cross-account execution before acquiring a lock', async () => {
     await expect(runBookingOpsAutomationForBooking({ bookingId: ID, expectedAccountId: 'account-2', dryRun: true })).rejects.toThrow('booking_account_mismatch');
     expect(state.rpc).not.toHaveBeenCalled();
+  });
+
+  it('rejects cross-account live execution before acquiring a durable lease', async () => {
+    await expect(runBookingOpsAutomationForBooking({ bookingId: ID, expectedAccountId: 'account-2' })).rejects.toThrow('booking_account_mismatch');
+    expect(state.rpc).not.toHaveBeenCalled();
+    expect(state.mutations).toBe(0);
+  });
+
+  it('rejects wrong-property live execution before acquiring a durable lease', async () => {
+    await expect(runBookingOpsAutomationForBooking({
+      bookingId: ID, expectedAccountId: 'account-1', expectedPropertyId: 'property-2',
+    })).rejects.toThrow('booking_scope_mismatch');
+    expect(state.rpc).not.toHaveBeenCalled();
+    expect(state.mutations).toBe(0);
   });
 
   it('rejects a booking that no longer belongs to the caller-authorized property', async () => {

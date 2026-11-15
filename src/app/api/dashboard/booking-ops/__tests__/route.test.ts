@@ -95,8 +95,8 @@ vi.mock('@/lib/booking-ops/guest-legal-deposit-mvd-execution', () => ({
   })),
 }));
 
-vi.mock('@/lib/booking-ops/pre-checkin-control-center', () => ({
-  getPreCheckinStatus: vi.fn(async () => ({
+vi.mock('@/lib/booking-ops/pre-checkin-control-center', () => {
+  const readPreCheckinStatus = vi.fn(async () => ({
     bookingId: 'ops-route',
     status: 'ready_for_checkin',
     readinessScore: 100,
@@ -108,7 +108,10 @@ vi.mock('@/lib/booking-ops/pre-checkin-control-center', () => ({
     lifecycleScore: 100,
     lastRecomputedAt: new Date().toISOString(),
     metadata: {},
-  })),
+  }));
+  return {
+  getPreCheckinStatus: readPreCheckinStatus,
+  readPreCheckinStatus,
   listBookingsByReadinessStatus: vi.fn(async () => []),
   recomputeBookingCheckinReadiness: vi.fn(async () => ({
     bookingId: 'ops-route',
@@ -144,7 +147,8 @@ vi.mock('@/lib/booking-ops/pre-checkin-control-center', () => ({
     'checked_in',
     'closed',
   ],
-}));
+  };
+});
 
 vi.mock('@/lib/booking-ops/checkin-execution-autopilot', () => {
   const snapshot = () => {
