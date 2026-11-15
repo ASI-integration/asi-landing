@@ -11,6 +11,7 @@ type DashboardNavItem = {
   href: string;
   key:
     | 'overview'
+    | 'data'
     | 'crm'
     | 'crmQueue'
     | 'reports'
@@ -35,7 +36,8 @@ type DashboardNavItem = {
 
 const navItems: DashboardNavItem[] = [
   { href: '/dashboard', key: 'overview', label: 'Обзор' },
-  { href: '/dashboard/onboarding', key: 'onboarding', label: 'Запуск объектов' },
+  { href: '/dashboard/data', key: 'data', label: 'Данные и изменения' },
+  { href: '/dashboard/onboarding', key: 'onboarding', label: 'Подробная настройка' },
   { href: '/dashboard/crm/queue', key: 'crmQueue', label: 'Очередь CRM' },
   { href: '/dashboard/crm', key: 'crm', label: 'CRM' },
   { href: '/dashboard/reports', key: 'reports', label: 'Мои отчёты' },
@@ -59,7 +61,7 @@ const navItems: DashboardNavItem[] = [
 // Keep the everyday dashboard focused. All original routes and permission checks
 // remain available under an explicit advanced-tools disclosure.
 const advancedNavKeys = new Set<DashboardNavItem['key']>([
-  'crm', 'crmQueue', 'operations', 'propertyKnowledge', 'automations',
+  'crm', 'crmQueue', 'operations', 'propertyKnowledge', 'automations', 'onboarding',
   'roadmap', 'engineProgress', 'engineLive', 'strigunovGps',
   'missionControl', 'development',
 ]);
