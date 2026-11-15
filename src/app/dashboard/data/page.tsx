@@ -20,6 +20,7 @@ type ChangeReceipt = {
   external_status: string;
   explanation: string;
   created_at: string;
+  fields?: string[];
 };
 
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300';
@@ -285,6 +286,9 @@ export default function DataAndChangesPage() {
                   {item.status === 'applied_internal' ? 'Применено внутри ASI' : 'Не применено: конфликт изменений'}
                 </p>
                 <p className="mt-1 text-sm text-slate-600">{item.explanation}</p>
+                {item.fields?.length ? (
+                  <p className="mt-1 text-xs text-slate-500">Поля: {item.fields.join(', ')}</p>
+                ) : null}
                 {item.external_status === 'awaiting_verified_adapter' ? (
                   <p className="mt-1 text-sm text-amber-800">Внешние подключения: не применено, требуется проверенный адаптер.</p>
                 ) : null}
