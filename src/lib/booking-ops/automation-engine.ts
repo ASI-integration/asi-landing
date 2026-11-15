@@ -55,7 +55,7 @@ function isFinished(
   return tasks.some((task) => accepted.has(task.taskType) && task.status === 'completed');
 }
 
-function hasTerminalTask(
+function hasExistingTask(
   taskType: BookingOpsAutomationTaskType,
   tasks: BookingOpsTask[],
 ): boolean {
@@ -63,8 +63,9 @@ function hasTerminalTask(
     taskType,
     ...(COMPLETION_ALIASES[taskType] ?? []),
   ]);
-  return tasks.some((task) =>
-    accepted.has(task.taskType) && (task.status === 'completed' || task.status === 'cancelled'));
+  // Replanning must preserve active operator work as well as terminal tasks.
+  // Presence prevents duplicate work; only completion advances readiness.
+  return tasks.some((task) => accepted.has(task.taskType));
 }
 
 function hasRepairSignal(record: BookingOpsRecord): boolean {
@@ -172,7 +173,7 @@ export function planBookingOpsPreparation(
   }
 
   const items = requiredTaskTypes
-    .filter((taskType) => !hasTerminalTask(taskType, existingTasks))
+    .filter((taskType) => !hasExistingTask(taskType, existingTasks))
     .map((taskType) => planItem(
       taskType,
       taskDescription(taskType),
