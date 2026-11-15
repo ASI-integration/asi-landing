@@ -21,12 +21,22 @@ export async function GET() {
   const auth = await owner();
   if ('error' in auth) return auth.error;
   const { data, error } = await supabase.from('ops_v17_owner_change_receipts')
-    .select('id,section,status,external_status,explanation,created_at,applied_at,confirmed_at')
+    .select('id,section,status,external_status,explanation,created_at,applied_at,confirmed_at,requested_values,before_values,applied_values')
     .eq('account_id', auth.accountId)
     .order('created_at', { ascending: false })
     .limit(25);
   if (error) return NextResponse.json({ ok: false, message: 'История изменений недоступна.' }, { status: 503 });
-  return NextResponse.json({ ok: true, changes: data ?? [] }, {
+  // Report field names only; keep before/after values (including owner contacts) server-side.
+  const changes = (data ?? []).map((record) => {
+    const requested = (record.requested_values ?? {}) as Record<string, unknown>;
+    const before = (record.before_values ?? {}) as Record<string, unknown>;
+    const applied = (record.applied_values ?? {}) as Record<string, unknown>;
+    const fields = Object.keys(requested).filter((key) =>
+      record.status === 'conflict' || JSON.stringify(before[key] ?? null) !== JSON.stringify(applied[key] ?? null));
+    const { requested_values: _req, before_values: _before, applied_values: _applied, ...publicSummary } = record;
+    return { ...publicSummary, fields };
+  });
+  return NextResponse.json({ ok: true, changes }, {
     headers: { 'Cache-Control': 'private, no-store' },
   });
 }
