@@ -30,7 +30,7 @@ export function parseOwnerChange(body: unknown): OwnerChangeInput {
   if (!isObject(values) || !isObject(expected)) throw new Error('Некорректные данные.');
   const allowed = OWNER_CHANGE_FIELDS[section as OwnerChangeSection] as readonly string[];
   const names = Object.keys(values);
-  if (!names.length || names.some((key) => !allowed.includes(key)) || JSON.stringify(expected).length > 8000) {
+  if (!names.length || names.some((key) => !allowed.includes(key)) || JSON.stringify(expected).length > 30000) {
     throw new Error('Некорректные поля изменения.');
   }
   const clean: Record<string, string> = {};
