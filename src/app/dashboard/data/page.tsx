@@ -91,6 +91,16 @@ export default function DataAndChangesPage() {
     if (step === 'operations') setData((p) => ({ ...p, operations: { ...p.operations, [key]: value } }));
   };
 
+  const refreshSection = async (target: Exclude<EditableStep, 'properties'>) => {
+    const response = await fetch('/api/dashboard/ops-v17?view=intake', { credentials: 'include', cache: 'no-store' });
+    const payload = await readResponseJson<WorkspaceResponse>(response, { ok: false });
+    if (!response.ok || !payload.ok) throw new Error('refresh_failed');
+    const confirmed = payload.workspace?.onboarding?.data?.[target] ?? {};
+    // Preserve other unsaved sections; only the server-confirmed section is replaced.
+    setBaseline((previous) => ({ ...previous, [target]: confirmed }));
+    setData((previous) => ({ ...previous, [target]: confirmed }));
+  };
+
   const save = async () => {
     if (saving || loading || !loaded || section === 'properties') return;
     setSaving(true);
@@ -115,16 +125,15 @@ export default function DataAndChangesPage() {
       }>(response, { ok: false });
       if (!response.ok || !result.ok || result.result?.status !== 'applied_internal') {
         if (response.status === 409) {
-          setError(result.message || 'Обнаружены новые изменения. Проверьте актуальные данные перед повторным сохранением.');
-          await load();
+          await refreshSection(section);
+          setError(result.message || 'Изменение отклонено: другая сессия уже обновила этот раздел. Проверьте свежие данные и внесите исправление повторно.');
           await loadHistory();
           return;
         }
         throw new Error('save_failed');
       }
-      // Re-read the committed values instead of trusting the original input
-      // (which may be normalized server-side or changed concurrently).
-      await load();
+      // Re-read ONLY the submitted section, preserving unrelated unsaved edits.
+      await refreshSection(section);
       setFeedback(result.result.explanation || 'Внутреннее изменение подтверждено.');
       await loadHistory();
     } catch {
