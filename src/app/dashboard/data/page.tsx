@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { readResponseJson } from '@/lib/safeResponseJson';
-import type { OnboardingData, OnboardingStep } from '@/lib/ops-v17/types';
+import type { OnboardingData } from '@/lib/ops-v17/types';
+import { OWNER_CHANGE_FIELDS } from '@/lib/ops-v17/change-policy';
 
 type WorkspaceResponse = {
   ok?: boolean;
@@ -12,6 +13,14 @@ type WorkspaceResponse = {
 };
 
 type EditableStep = 'business' | 'owner' | 'properties' | 'operations';
+type ChangeReceipt = {
+  id: string;
+  section: string;
+  status: 'applied_internal' | 'conflict';
+  external_status: string;
+  explanation: string;
+  created_at: string;
+};
 
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300';
 const labelClass = 'block text-sm font-medium text-slate-700';
@@ -26,6 +35,9 @@ const sections: { key: EditableStep; title: string; lead: string }[] = [
 
 export default function DataAndChangesPage() {
   const [data, setData] = useState<OnboardingData>({});
+  const [baseline, setBaseline] = useState<OnboardingData>({});
+  const [history, setHistory] = useState<ChangeReceipt[]>([]);
+  const [historyUnavailable, setHistoryUnavailable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [section, setSection] = useState<EditableStep>('business');
   const [saving, setSaving] = useState(false);
@@ -43,6 +55,7 @@ export default function DataAndChangesPage() {
       if (!res.ok || !payload.ok) throw new Error('Не удалось загрузить данные вашего рабочего пространства.');
       const next = payload.workspace?.onboarding?.data ?? {};
       setData(next);
+      setBaseline(next);
       setLoaded(true);
       const hasKnownData = Boolean(next.business?.name || next.owner?.name || next.properties?.length || next.rentalConnection?.step);
       setMode(hasKnownData ? 'updates' : 'initial');
@@ -54,7 +67,19 @@ export default function DataAndChangesPage() {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  const loadHistory = useCallback(async () => {
+    try {
+      const response = await fetch('/api/dashboard/ops-v17/changes', { credentials: 'include', cache: 'no-store' });
+      const payload = await readResponseJson<{ ok?: boolean; changes?: ChangeReceipt[] }>(response, { ok: false });
+      if (!response.ok || !payload.ok || !Array.isArray(payload.changes)) throw new Error('history_unavailable');
+      setHistory(payload.changes);
+      setHistoryUnavailable(false);
+    } catch {
+      setHistoryUnavailable(true);
+    }
+  }, []);
+
+  useEffect(() => { void load(); void loadHistory(); }, [load, loadHistory]);
 
   const current = useMemo(() => sections.find((s) => s.key === section)!, [section]);
 
@@ -66,26 +91,45 @@ export default function DataAndChangesPage() {
   };
 
   const save = async () => {
-    if (saving || loading || !loaded) return;
+    if (saving || loading || !loaded || section === 'properties') return;
     setSaving(true);
     setFeedback('');
     setError('');
-    const patch: Partial<OnboardingData> = {};
-    if (section === 'business') patch.business = data.business;
-    if (section === 'owner') patch.owner = data.owner;
-    if (section === 'operations') patch.operations = data.operations;
+
+    const fields = OWNER_CHANGE_FIELDS[section];
+    const currentSection = (data[section] ?? {}) as Record<string, string | undefined>;
+    const values = Object.fromEntries(fields.map((key) => [key, currentSection[key] ?? '']));
+    const expected = baseline[section] ?? {};
     try {
-      const response = await fetch('/api/dashboard/ops-v17', {
-        method: 'PATCH',
+      const response = await fetch('/api/dashboard/ops-v17/changes', {
+        method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ step: section as OnboardingStep, data: patch }),
+        body: JSON.stringify({ requestId: crypto.randomUUID(), section, values, expected }),
       });
-      const body = await readResponseJson<{ ok?: boolean; message?: string }>(response, { ok: false });
-      if (!response.ok || !body.ok) throw new Error('save_failed');
-      setFeedback('Данные сохранены в вашей анкете ASI. Изменения действующих подключений и отправок отдельно проверяются перед применением.');
+      const result = await readResponseJson<{
+        ok?: boolean;
+        message?: string;
+        result?: { status?: string; externalStatus?: string; explanation?: string };
+      }>(response, { ok: false });
+      if (!response.ok || !result.ok || result.result?.status !== 'applied_internal') {
+        if (response.status === 409) {
+          setError(result.message || 'Обнаружены новые изменения. Проверьте актуальные данные перед повторным сохранением.');
+          await load();
+          await loadHistory();
+          return;
+        }
+        throw new Error('save_failed');
+      }
+      setBaseline((previous) => ({
+        ...previous,
+        [section]: { ...(previous[section] ?? {}), ...values },
+      }));
+      setFeedback(result.result.explanation || 'Внутреннее изменение подтверждено.');
+      await loadHistory();
     } catch {
-      setError('Не удалось сохранить. Проверьте соединение и попробуйте снова.');
+      setError('Не удалось подтвердить применение. Проверьте историю перед повторным сохранением.');
+      await loadHistory();
     } finally {
       setSaving(false);
     }
