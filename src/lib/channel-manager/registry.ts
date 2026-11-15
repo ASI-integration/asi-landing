@@ -12,6 +12,40 @@ export type ChannelManagerSupportedFeatures = {
   messages: boolean;
 };
 
+/** Source discovery is not verification, and verification is not an external write. */
+export type ChannelConnectorCapabilityStatus =
+  | { status: 'discovered'; verification?: never; externalApplication?: never }
+  | {
+      status: 'verified';
+      verification: { evidenceRef: string; verifiedAt: string };
+      externalApplication?: never;
+    }
+  | {
+      status: 'applied_external';
+      verification: { evidenceRef: string; verifiedAt: string };
+      externalApplication: {
+        evidenceRef: string;
+        appliedAt: string;
+        propertyId: string;
+        operationId: string;
+      };
+    };
+
+export type ChannelConnectorCapabilities = {
+  readonly [Feature in keyof ChannelManagerSupportedFeatures]: Readonly<ChannelConnectorCapabilityStatus>;
+};
+
+// These entries describe candidates only. No provider capability or external
+// operation has been verified by this source registry. API access metadata and
+// owner selection must never promote a capability to verified/applied_external.
+const DISCOVERED_CAPABILITIES: ChannelConnectorCapabilities = Object.freeze({
+  propertyExport: Object.freeze({ status: 'discovered' as const }),
+  rates: Object.freeze({ status: 'discovered' as const }),
+  availability: Object.freeze({ status: 'discovered' as const }),
+  bookingsImport: Object.freeze({ status: 'discovered' as const }),
+  messages: Object.freeze({ status: 'discovered' as const }),
+});
+
 export type ChannelManagerRegistryEntry = {
   id: string;
   name: string;
@@ -19,6 +53,8 @@ export type ChannelManagerRegistryEntry = {
   apiStatus: ChannelManagerApiStatus;
   apiNotes: string;
   supportedFeatures: ChannelManagerSupportedFeatures;
+  /** Per-feature evidence state; not an authorization to call a provider. */
+  capabilities: ChannelConnectorCapabilities;
   requiresOperator: boolean;
   ownerAccessRequired: boolean;
   publicLabel: string;
@@ -40,6 +76,7 @@ export const CHANNEL_MANAGER_REGISTRY: ChannelManagerRegistryEntry[] = [
     apiStatus: 'partner_access_required',
     apiNotes: 'В проекте есть выбор Bnovo в потоке подключения; публичный API для ASI не подтверждён в коде.',
     supportedFeatures: UNKNOWN_FEATURES,
+    capabilities: DISCOVERED_CAPABILITIES,
     requiresOperator: true,
     ownerAccessRequired: true,
     publicLabel: 'Bnovo',
@@ -51,6 +88,7 @@ export const CHANNEL_MANAGER_REGISTRY: ChannelManagerRegistryEntry[] = [
     apiStatus: 'partner_access_required',
     apiNotes: 'В проекте есть выбор RealtyCalendar в потоке подключения; публичный API для ASI не подтверждён в коде.',
     supportedFeatures: UNKNOWN_FEATURES,
+    capabilities: DISCOVERED_CAPABILITIES,
     requiresOperator: true,
     ownerAccessRequired: true,
     publicLabel: 'RealtyCalendar',
@@ -62,6 +100,7 @@ export const CHANNEL_MANAGER_REGISTRY: ChannelManagerRegistryEntry[] = [
     apiStatus: 'partner_access_required',
     apiNotes: 'Упоминается в продуктовых материалах; прямое API-подключение ASI в коде не подтверждено.',
     supportedFeatures: UNKNOWN_FEATURES,
+    capabilities: DISCOVERED_CAPABILITIES,
     requiresOperator: true,
     ownerAccessRequired: true,
     publicLabel: 'TravelLine',
@@ -73,6 +112,7 @@ export const CHANNEL_MANAGER_REGISTRY: ChannelManagerRegistryEntry[] = [
     apiStatus: 'unknown',
     apiNotes: 'Нет подтверждённой интеграции в коде проекта.',
     supportedFeatures: UNKNOWN_FEATURES,
+    capabilities: DISCOVERED_CAPABILITIES,
     requiresOperator: true,
     ownerAccessRequired: true,
     publicLabel: 'Контур.Отель',
@@ -84,6 +124,7 @@ export const CHANNEL_MANAGER_REGISTRY: ChannelManagerRegistryEntry[] = [
     apiStatus: 'unknown',
     apiNotes: 'Нет подтверждённой интеграции в коде проекта.',
     supportedFeatures: UNKNOWN_FEATURES,
+    capabilities: DISCOVERED_CAPABILITIES,
     requiresOperator: true,
     ownerAccessRequired: true,
     publicLabel: 'Shelter',
@@ -95,6 +136,7 @@ export const CHANNEL_MANAGER_REGISTRY: ChannelManagerRegistryEntry[] = [
     apiStatus: 'unknown',
     apiNotes: 'Менеджер каналов не из списка — нужна ручная проверка оператором.',
     supportedFeatures: UNKNOWN_FEATURES,
+    capabilities: DISCOVERED_CAPABILITIES,
     requiresOperator: true,
     ownerAccessRequired: true,
     publicLabel: 'Другой менеджер каналов',
@@ -106,6 +148,7 @@ export const CHANNEL_MANAGER_REGISTRY: ChannelManagerRegistryEntry[] = [
     apiStatus: 'unknown',
     apiNotes: 'Владелец уточнит менеджер каналов позже.',
     supportedFeatures: UNKNOWN_FEATURES,
+    capabilities: DISCOVERED_CAPABILITIES,
     requiresOperator: true,
     ownerAccessRequired: false,
     publicLabel: 'Уточнит позже',
