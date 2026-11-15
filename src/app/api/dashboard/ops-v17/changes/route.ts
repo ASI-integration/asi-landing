@@ -46,7 +46,7 @@ export async function POST(req: Request) {
   if ('error' in auth) return auth.error;
   let change: ReturnType<typeof parseOwnerChange>;
   try {
-    if (Number(req.headers.get('content-length') || '0') > 14000) {
+    if (Number(req.headers.get('content-length') || '0') > 100000) {
       return NextResponse.json({ ok: false, message: 'Запрос слишком большой.' }, { status: 413 });
     }
     change = parseOwnerChange(await req.json());
