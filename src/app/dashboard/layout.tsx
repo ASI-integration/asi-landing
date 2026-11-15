@@ -68,7 +68,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const pathname = usePathname();
   const { session } = useSession();
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState<boolean | null>(null);
 
   const visibleNavItems = navItems.filter((item) => {
     if (item.key === 'crm' || item.key === 'crmQueue' || item.key === 'operations' || item.key === 'bookingOps' || item.key === 'propertyKnowledge') {
@@ -88,7 +88,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const onAdvancedRoute = advancedNavItems.some(
     (item) => pathname === item.href || pathname.startsWith(item.href + '/'),
   );
-  const showAdvanced = advancedOpen || onAdvancedRoute;
+  const showAdvanced = advancedOpen ?? onAdvancedRoute;
 
   const renderNavLink = ({ href, key, label }: DashboardNavItem) => {
     const isActive = pathname === href || (href !== '/dashboard' && pathname.startsWith(href + '/'));
@@ -136,7 +136,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
                 type="button"
                 aria-expanded={showAdvanced}
                 aria-controls="dashboard-advanced-nav"
-                onClick={() => setAdvancedOpen((value) => !value)}
+                onClick={() => setAdvancedOpen(!showAdvanced)}
                 className="mt-4 flex w-full items-center justify-between rounded-md border border-slate-700 px-4 py-3 text-left text-sm font-medium text-slate-300 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200"
               >
                 <span>Инструменты оператора</span>
