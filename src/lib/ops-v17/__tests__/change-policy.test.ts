@@ -25,6 +25,19 @@ describe('owner internal change policy', () => {
     expect(() => parseOwnerChange({ requestId: id, section, values, expected: {} })).toThrow();
   });
 
+  it('accepts valid long Cyrillic cleaning and maintenance rules', () => {
+    const longRule = 'У'.repeat(1900);
+    const values = {
+      cleaningRule: longRule,
+      linenRule: longRule,
+      inspectionRule: longRule,
+      maintenanceRule: longRule,
+      checkInTime: '14:30',
+      checkOutTime: '12:00',
+    };
+    expect(parseOwnerChange({ requestId: id, section: 'operations', values, expected: values }).values.maintenanceRule).toBe(longRule);
+  });
+
   it('rejects client-selected tenant and invalid nonce', () => {
     expect(() => parseOwnerChange({
       requestId: id, section: 'owner', values: { name: 'A' }, expected: {}, accountId: 'other-account',
