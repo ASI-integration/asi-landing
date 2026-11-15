@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { readResponseJson } from '@/lib/safeResponseJson';
-import type { OnboardingData, OnboardingStep, PropertyDraft } from '@/lib/ops-v17/types';
+import type { OnboardingData, OnboardingStep } from '@/lib/ops-v17/types';
 
 type WorkspaceResponse = {
   ok?: boolean;
@@ -24,10 +24,6 @@ const sections: { key: EditableStep; title: string; lead: string }[] = [
   { key: 'operations', title: 'Правила работы', lead: 'Время заезда, выезда и порядок уборки.' },
 ];
 
-function changeProperty(rows: PropertyDraft[], index: number, key: 'name' | 'address', value: string): PropertyDraft[] {
-  return rows.map((row, rowIndex) => rowIndex === index ? { ...row, [key]: value } : row);
-}
-
 export default function DataAndChangesPage() {
   const [data, setData] = useState<OnboardingData>({});
   const [loading, setLoading] = useState(true);
@@ -42,7 +38,7 @@ export default function DataAndChangesPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/dashboard/ops-v17', { credentials: 'include', cache: 'no-store' });
+      const res = await fetch('/api/dashboard/ops-v17?view=intake', { credentials: 'include', cache: 'no-store' });
       const payload = await readResponseJson<WorkspaceResponse>(res, { ok: false });
       if (!res.ok || !payload.ok) throw new Error('Не удалось загрузить данные вашего рабочего пространства.');
       const next = payload.workspace?.onboarding?.data ?? {};
@@ -61,7 +57,6 @@ export default function DataAndChangesPage() {
   useEffect(() => { void load(); }, [load]);
 
   const current = useMemo(() => sections.find((s) => s.key === section)!, [section]);
-  const properties = data.properties ?? [];
 
   const setField = (step: EditableStep, key: string, value: string) => {
     setFeedback('');
@@ -78,7 +73,6 @@ export default function DataAndChangesPage() {
     const patch: Partial<OnboardingData> = {};
     if (section === 'business') patch.business = data.business;
     if (section === 'owner') patch.owner = data.owner;
-    if (section === 'properties') patch.properties = properties;
     if (section === 'operations') patch.operations = data.operations;
     try {
       const response = await fetch('/api/dashboard/ops-v17', {
@@ -192,26 +186,30 @@ export default function DataAndChangesPage() {
               </> : null}
             </div>
             {section === 'properties' ? (
-              <div className="space-y-4">
-                {properties.length === 0 ? <p className="text-sm text-slate-600">В этой анкете пока нет объектов. Первое подключение также выполняется через мастер выше.</p> : null}
-                {properties.map((property, index) => (
-                  <div key={property.key} className="grid gap-4 rounded-lg border border-slate-200 p-4 sm:grid-cols-2">
-                    {field('Название объекта', property.name ?? '', (v) => setData((p) => ({ ...p, properties: changeProperty(p.properties ?? [], index, 'name', v) })))}
-                    {field('Адрес объекта', property.address ?? '', (v) => setData((p) => ({ ...p, properties: changeProperty(p.properties ?? [], index, 'address', v) })))}
-                  </div>
-                ))}
-                <button type="button"
-                  onClick={() => setData((p) => ({ ...p, properties: [...(p.properties ?? []), { key: `owner-draft-${Date.now()}`, name: '', address: '' }] }))}
-                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-900">Добавить объект в анкету</button>
-                <p className="text-xs text-slate-500">Это черновик справочных данных, а не регистрация объекта в рабочей базе или подключение каналов.</p>
+              <div className="rounded-lg border border-blue-100 bg-blue-50 p-5">
+                <h4 className="font-semibold text-slate-900">Объекты подключаются через проверенную форму</h4>
+                <p className="mt-2 text-sm leading-relaxed text-slate-700">
+                  Чтобы ASI использовал адреса и инструкции в реальной работе, объект должен быть создан
+                  в принадлежащем вам аккаунте и пройти проверку. Просто добавить название в черновик недостаточно.
+                </p>
+                <Link href="/dashboard/channel-connections?setup=1"
+                  className="mt-4 inline-flex rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white">
+                  Открыть паспорт объекта
+                </Link>
+                <p className="mt-4 text-xs text-slate-600">
+                  Для изменения уже работающего объекта пока требуется подтверждение ASI.
+                  Сохранение другой анкеты не обновляет параметры заселения или каналов автоматически.
+                </p>
               </div>
             ) : null}
             {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
             {feedback ? <p role="status" className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-900">{feedback}</p> : null}
             <div className="flex flex-wrap items-center gap-4">
-              <button type="button" disabled={saving || loading} onClick={() => void save()} className={saveClass}>
-                {saving ? 'Сохраняем…' : 'Сохранить раздел'}
-              </button>
+              {section !== 'properties' ? (
+                <button type="button" disabled={saving || loading} onClick={() => void save()} className={saveClass}>
+                  {saving ? 'Сохраняем…' : 'Сохранить раздел'}
+                </button>
+              ) : null}
               <p className="text-xs text-slate-500">Доступно повторное редактирование в любой момент.</p>
             </div>
           </div>
