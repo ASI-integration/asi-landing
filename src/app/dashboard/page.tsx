@@ -2,275 +2,146 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { productSupportEmail } from '@/config/contact';
 import { useSession } from '@/contexts/SessionContext';
-import type { PilotRolloutMetrics } from '@/lib/crm/pilot-rollout';
-import { readResponseJson } from '@/lib/safeResponseJson';
 import { ExceptionOnlySummary } from '@/components/booking-ops/ExceptionOnlySummary';
+import { readResponseJson } from '@/lib/safeResponseJson';
 
-function formatDateRu(iso: string | null) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('ru-RU', { year: 'numeric', month: 'long', day: 'numeric' });
+type WorkspaceResponse = {
+  ok?: boolean;
+  workspace?: {
+    onboarding?: { pilot_activated_at?: string | null };
+    progress?: { percentage?: number };
+    operationalReadiness?: { ready?: boolean; blockers?: string[] };
+  } | null;
+};
+
+type WorkspaceState = 'loading' | 'needs_setup' | 'needs_review' | 'pilot_active' | 'unavailable';
+
+function Status({ state }: { state: WorkspaceState }) {
+  const copy: Record<WorkspaceState, { title: string; detail: string }> = {
+    loading: { title: 'Проверяем подключение', detail: 'Получаем актуальное состояние рабочего пространства.' },
+    needs_setup: { title: 'Нужно заполнить данные', detail: 'ASI ещё не получил всю исходную информацию для запуска.' },
+    needs_review: { title: 'Настройка или проверка', detail: 'Подключения и необходимые разрешения ещё не подтверждены.' },
+    pilot_active: { title: 'Пилот активирован', detail: 'Проверяйте события и исключения. Запуск отдельных интеграций зависит от их готовности.' },
+    unavailable: { title: 'Статус недоступен', detail: 'Это не подтверждение готовности системы. Повторите проверку позже.' },
+  };
+  return (
+    <div role="status" className="rounded-xl border border-slate-200 bg-white p-5">
+      <p className="text-sm font-medium text-slate-500">Состояние ASI</p>
+      <p className="mt-2 text-lg font-semibold text-slate-900">{copy[state].title}</p>
+      <p className="mt-1 text-sm text-slate-600">{copy[state].detail}</p>
+    </div>
+  );
 }
-
-function planLabel(plan: string | null | undefined) {
-  if (plan === 'small') return 'Базовый';
-  if (plan === 'growth') return 'Масштабирование';
-  if (plan === 'enterprise') return 'Крупный портфель';
-  return '—';
-}
-
-function subscriptionStatusLabel(status: string | null | undefined) {
-  if (status === 'trialing') return 'Пробный период';
-  if (status === 'active') return 'Активна';
-  if (status === 'inactive' || status === 'canceled' || status === 'cancelled') return 'Неактивна';
-  if (status) return status;
-  return '—';
-}
-
-function ruPilotStatusLabel(status: string | null | undefined) {
-  if (!status || status === 'not_started' || status === 'application') return 'Подключение не начато';
-  if (status === 'setup') return 'Бесплатная настройка';
-  if (status === 'ready') return 'Готов к запуску';
-  if (status === 'pilot_active') return '14 дней бесплатной работы';
-  if (status === 'pilot_completed' || status === 'report_ready') return 'Бесплатный период завершён';
-  if (status === 'continued') return 'Продолжение подтверждено';
-  if (status === 'stopped') return 'Остановлено';
-  return '—';
-}
-
-const modules = [
-  {
-    title: 'Коммуникации',
-    href: '/dashboard/communication',
-    status: 'настройка',
-    description: 'Сообщения гостей, заявки и ответы оператора в одном месте.',
-  },
-  {
-    title: 'Операции',
-    href: '/dashboard/ops',
-    status: 'в кабинете',
-    description: 'Заезды, задачи, уборка и готовность объектов к заселению.',
-  },
-  {
-    title: 'Подключения каналов',
-    href: '/dashboard/channel-connections',
-    status: 'первый шаг',
-    description: 'Свяжите ASI с RealtyCalendar, Bnovo, TravelLine или другой системой.',
-  },
-  {
-    title: 'Аналитика локации',
-    href: '/dashboard/reports',
-    status: 'в подписке',
-    description: 'Оценка адресов и сохранённые выводы по объектам внутри ASI.',
-  },
-] as const;
 
 export default function DashboardPage() {
-  const { session } = useSession();
-  const account = session?.account ?? null;
-  const isCrmOperator = session?.isCrmOperator === true;
-  const [pilotMetrics, setPilotMetrics] = useState<PilotRolloutMetrics | null>(null);
+  const { session, loading: sessionLoading } = useSession();
+  const [workspaceState, setWorkspaceState] = useState<WorkspaceState>('loading');
+  const [progress, setProgress] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!isCrmOperator) return;
-    void (async () => {
+    if (sessionLoading) return;
+    if (!session?.user) {
+      setWorkspaceState('unavailable');
+      return;
+    }
+    let cancelled = false;
+    (async () => {
       try {
-        const res = await fetch('/api/dashboard/crm/pilot-summary', { credentials: 'include' });
-        const data = await readResponseJson(res, { ok: false, metrics: null });
-        if (res.ok && data.ok && data.metrics) {
-          setPilotMetrics(data.metrics);
+        const response = await fetch('/api/dashboard/ops-v17', { credentials: 'include', cache: 'no-store' });
+        const payload = await readResponseJson<WorkspaceResponse>(response, { ok: false });
+        if (cancelled) return;
+        if (!response.ok || !payload.ok) {
+          setWorkspaceState('unavailable');
+          return;
         }
+        const w = payload.workspace;
+        if (!w) {
+          setWorkspaceState('needs_setup');
+          setProgress(0);
+          return;
+        }
+        const pct = w.progress?.percentage;
+        setProgress(typeof pct === 'number' && Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : null);
+        setWorkspaceState(
+          w.onboarding?.pilot_activated_at && w.operationalReadiness?.ready
+            ? 'pilot_active' : 'needs_review',
+        );
       } catch {
-        // Блок пилота не блокирует обзор кабинета.
+        if (!cancelled) setWorkspaceState('unavailable');
       }
     })();
-  }, [isCrmOperator]);
+    return () => { cancelled = true; };
+  }, [session?.user, sessionLoading]);
 
-  const ruPilot = session?.ruCommercialPilot ?? null;
-  const trialEnds = ruPilot ? ruPilot.pilot_ends_at : account?.trial_ends_at ?? null;
-  const subStatus = ruPilot
-    ? ruPilotStatusLabel(ruPilot.status)
-    : subscriptionStatusLabel(account?.subscription_status);
-
+  const isCrmOperator = session?.isCrmOperator === true;
   return (
-    <div className="space-y-8 max-w-6xl">
-
-      <ExceptionOnlySummary enabled={isCrmOperator} />
-
-      {/* Block 1 — Состояние аккаунта */}
-      <section>
-        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">ASI-кабинет</h1>
-        <p className="mt-1.5 max-w-3xl text-lg text-slate-500">
-          Один центр для управления объектами: сообщения, операции, каналы бронирования и аналитика локации.
+    <main className="mx-auto max-w-6xl space-y-7">
+      <header>
+        <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">ASI · Автоматизация управления объектами</p>
+        <h1 className="mt-2 text-3xl font-bold text-slate-900">Ваши объекты под контролем ASI</h1>
+        <p className="mt-2 max-w-3xl text-base leading-relaxed text-slate-600">
+          Вы предоставляете данные и правила работы. ASI выполняет доступные автоматические операции,
+          отслеживает события и передаёт вам вопросы, которые требуют решения.
         </p>
+      </header>
 
-        <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <p className="text-sm text-slate-500">Рабочее пространство</p>
-            <p className="mt-2 text-lg font-semibold text-slate-900 leading-snug">
-              {account?.name ?? '—'}
-            </p>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <p className="text-sm text-slate-500">Подписка</p>
-            <p className="mt-2 text-lg font-semibold text-slate-900 leading-snug">
-              {planLabel(account?.plan_code)}
-            </p>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <p className="text-sm text-slate-500">Доступ</p>
-            <p className="mt-2 text-lg font-semibold text-slate-900 leading-snug">
-              {subStatus}
-            </p>
-            {trialEnds && (
-              <p className="mt-1 text-sm text-slate-400">до {formatDateRu(trialEnds)}</p>
-            )}
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <p className="text-sm text-slate-500">Статус системы</p>
-            <p className="mt-2 text-lg font-semibold text-slate-900 leading-snug">
-              Единый кабинет
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {isCrmOperator && pilotMetrics ? (
-        <section className="rounded-xl border border-slate-200 bg-white p-7">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h2 className="text-2xl font-bold text-slate-900">Пилот</h2>
-              <p className="mt-2 text-base text-slate-600 max-w-2xl leading-relaxed">
-                Контроль постепенного запуска: активные подключения, очередь и объекты на настройке.
-              </p>
-            </div>
-            <Link
-              href="/dashboard/crm"
-              className="inline-flex shrink-0 items-center justify-center rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
-            >
-              Открыть CRM
-            </Link>
-          </div>
-
-          <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg border border-slate-100 bg-slate-50 px-5 py-4">
-              <p className="text-sm text-slate-500">Участников пилота</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">
-                {pilotMetrics.activePilots} / {pilotMetrics.limit}
-              </p>
-            </div>
-            <div className="rounded-lg border border-slate-100 bg-slate-50 px-5 py-4">
-              <p className="text-sm text-slate-500">В листе ожидания</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">{pilotMetrics.waitlist}</p>
-            </div>
-            <div className="rounded-lg border border-slate-100 bg-slate-50 px-5 py-4">
-              <p className="text-sm text-slate-500">На настройке объекта</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">{pilotMetrics.onboarding}</p>
-            </div>
-            <div className="rounded-lg border border-slate-100 bg-slate-50 px-5 py-4">
-              <p className="text-sm text-slate-500">Требуют внимания</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">{pilotMetrics.needsAttention}</p>
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      {/* Block 2 — Модули */}
-      <section className="bg-white rounded-xl border border-slate-200 p-7">
-        <h2 className="text-2xl font-bold text-slate-900">Модули ASI</h2>
-        <p className="mt-2 text-base text-slate-600 max-w-2xl leading-relaxed">
-          Все разделы входят в рабочий кабинет по подписке. Подключите объекты и ведите ежедневную работу из ASI.
-        </p>
-
-        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-          {modules.map((module) => (
-            <Link
-              key={module.title}
-              href={module.href}
-              className="group flex min-h-[168px] flex-col justify-between rounded-xl border border-slate-200 bg-slate-50 p-5 transition-colors hover:border-slate-300 hover:bg-white"
-            >
-              <div>
-                <div className="flex items-start justify-between gap-3">
-                  <h3 className="text-xl font-bold text-slate-900">{module.title}</h3>
-                  <span className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1 text-sm font-medium text-slate-600">
-                    {module.status}
-                  </span>
-                </div>
-                <p className="mt-3 text-base leading-relaxed text-slate-600">{module.description}</p>
-              </div>
-              <span className="mt-5 text-sm font-semibold text-slate-900 group-hover:text-blue-700">
-                Открыть раздел
-              </span>
-            </Link>
-          ))}
-        </div>
-
-        <p className="mt-5 text-sm text-slate-500 leading-relaxed">
-          Аналитика локации здесь — часть кабинета для работы с объектами, а не отдельный публичный продукт.
-        </p>
-      </section>
-
-      {/* Block 3 — Как это связано */}
-      <section className="bg-white rounded-xl border border-slate-200 p-7">
-        <h2 className="text-xl font-bold text-slate-900">Как работает кабинет</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          ASI собирает данные по объектам и помогает быстрее принимать решения в ежедневной работе.
-        </p>
-
-        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="rounded-lg border border-slate-100 bg-slate-50 px-5 py-4">
-            <p className="text-base font-semibold text-slate-900">1. Подключите каналы</p>
-            <p className="mt-2 text-sm leading-relaxed text-slate-600">
-              ASI увидит объекты, брони, даты и занятость.
-            </p>
-          </div>
-          <div className="rounded-lg border border-slate-100 bg-slate-50 px-5 py-4">
-            <p className="text-base font-semibold text-slate-900">2. Ведите работу</p>
-            <p className="mt-2 text-sm leading-relaxed text-slate-600">
-              Сообщения, задачи и операционные события остаются в одном кабинете.
-            </p>
-          </div>
-          <div className="rounded-lg border border-slate-100 bg-slate-50 px-5 py-4">
-            <p className="text-base font-semibold text-slate-900">3. Смотрите аналитику</p>
-            <p className="mt-2 text-sm leading-relaxed text-slate-600">
-              Проверяйте адреса и храните выводы по объектам внутри подписки.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Block 4 — Следующий шаг */}
-      <section className="bg-slate-900 rounded-xl p-7">
-        <p className="text-sm font-medium text-slate-400 uppercase tracking-widest">Следующий шаг</p>
-        <h2 className="mt-2 text-2xl font-bold text-white">
-          Подключите каналы бронирования
-        </h2>
-        <p className="mt-2 text-base text-slate-300 leading-relaxed max-w-lg">
-          Это поможет ASI подтянуть объекты и бронирования. После этого кабинет станет рабочим центром для сообщений,
-          операций, каналов и аналитики локации.
-        </p>
-        <div className="mt-6">
-          <Link
-            href="/dashboard/channel-connections"
-            className="inline-flex items-center px-6 py-3 rounded-lg bg-white text-slate-900 text-base font-semibold hover:bg-slate-100 transition-colors"
-          >
-            Перейти к подключению
-          </Link>
-          <p className="mt-4 text-sm text-slate-500">
-            Нет вашей системы?{' '}
-            <a
-              href={`mailto:${productSupportEmail}?subject=${encodeURIComponent('Запрос на подключение PMS / Channel Manager')}`}
-              className="text-slate-300 underline hover:text-white transition-colors"
-            >
-              Напишите нам
-            </a>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Status state={workspaceState} />
+        <div className="rounded-xl border border-slate-200 bg-white p-5">
+          <p className="text-sm font-medium text-slate-500">Подготовка данных</p>
+          <p className="mt-2 text-lg font-semibold text-slate-900">
+            {progress === null ? 'Пока нет подтверждённых сведений' : `${progress}% анкеты заполнено`}
+          </p>
+          <p className="mt-1 text-sm text-slate-600">
+            После первоначального заполнения данные можно дополнять и исправлять.
+            Изменения действующих подключений проходят отдельную проверку.
           </p>
         </div>
+      </div>
+
+      {isCrmOperator ? <ExceptionOnlySummary enabled /> : null}
+
+      <section aria-labelledby="main-actions-title">
+        <h2 id="main-actions-title" className="text-xl font-semibold text-slate-900">Что можно сделать</h2>
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <Link href="/dashboard/data"
+            className="group rounded-xl border border-slate-200 bg-white p-6 hover:border-blue-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500">
+            <span className="text-sm font-semibold text-blue-700">01 · Данные и изменения</span>
+            <h3 className="mt-3 text-xl font-semibold text-slate-900">Заполнить или обновить</h3>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">Компания, объекты, адреса, правила, заезд и выезд. Вернуться к данным можно в любое время.</p>
+            <p className="mt-4 text-sm font-semibold text-blue-700 group-hover:underline">Открыть данные</p>
+          </Link>
+          <Link href="/dashboard/channel-connections"
+            className="group rounded-xl border border-slate-200 bg-white p-6 hover:border-blue-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500">
+            <span className="text-sm font-semibold text-blue-700">02 · Подключения</span>
+            <h3 className="mt-3 text-xl font-semibold text-slate-900">Подключить источники</h3>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">Выберите менеджер каналов. ASI покажет, какие интеграции уже готовы, а какие ещё настраиваются.</p>
+            <p className="mt-4 text-sm font-semibold text-blue-700 group-hover:underline">Открыть подключения</p>
+          </Link>
+          <Link href="/dashboard/communication"
+            className="group rounded-xl border border-slate-200 bg-white p-6 hover:border-blue-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500">
+            <span className="text-sm font-semibold text-blue-700">03 · Исключения и корректировки</span>
+            <h3 className="mt-3 text-xl font-semibold text-slate-900">Посмотреть важное</h3>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">Ошибки, вопросы, сообщения и случаи, в которых нужно ваше решение вместо автоматического действия.</p>
+            <p className="mt-4 text-sm font-semibold text-blue-700 group-hover:underline">Открыть обращения</p>
+          </Link>
+        </div>
       </section>
 
-    </div>
+      <section className="rounded-xl border border-slate-200 bg-slate-50 p-6">
+        <h2 className="text-xl font-semibold text-slate-900">Что ASI делает автоматически</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
+          После проверки источников, правил и разрешений ASI сможет обрабатывать новые брони,
+          готовить сообщения и задания, контролировать сроки, доступность и этапы заселения.
+          Фактически работающие функции зависят от подключённых каналов и подтверждённой готовности.
+        </p>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <Link href="/dashboard/reservations" className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100">Календарь</Link>
+          <Link href="/dashboard/reports" className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100">Аналитика</Link>
+          {isCrmOperator ? <Link href="/dashboard/bookings-simple" className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100">Бронирования</Link> : null}
+        </div>
+      </section>
+    </main>
   );
 }
