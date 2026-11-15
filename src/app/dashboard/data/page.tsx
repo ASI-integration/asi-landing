@@ -261,6 +261,39 @@ export default function DataAndChangesPage() {
           <p role="alert" className="mt-6 text-sm text-red-700">{error || 'Данные недоступны.'}</p>
         )}
       </section>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-5 sm:p-7" aria-label="История изменений">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">История изменений</h2>
+            <p className="mt-1 text-sm text-slate-600">Подтверждённые внутренние изменения и причины отклонения.</p>
+          </div>
+          <button type="button" onClick={() => void loadHistory()} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Обновить историю</button>
+        </div>
+        {historyUnavailable ? (
+          <p role="alert" className="mt-4 text-sm text-amber-800">История пока недоступна. Нельзя считать это подтверждением сохранения.</p>
+        ) : history.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-600">Подтверждённых изменений пока нет.</p>
+        ) : (
+          <ul className="mt-5 divide-y divide-slate-100">
+            {history.map((item) => (
+              <li key={item.id} className="py-3">
+                <div className="flex flex-wrap justify-between gap-2">
+                  <span className="font-medium text-slate-900">{sections.find((s) => s.key === item.section)?.title || item.section}</span>
+                  <span className="text-sm text-slate-500">{new Date(item.created_at).toLocaleString('ru-RU')}</span>
+                </div>
+                <p className="mt-1 text-sm font-medium text-slate-700">
+                  {item.status === 'applied_internal' ? 'Применено внутри ASI' : 'Не применено: конфликт изменений'}
+                </p>
+                <p className="mt-1 text-sm text-slate-600">{item.explanation}</p>
+                {item.external_status === 'awaiting_verified_adapter' ? (
+                  <p className="mt-1 text-sm text-amber-800">Внешние подключения: не применено, требуется проверенный адаптер.</p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </main>
   );
 }
