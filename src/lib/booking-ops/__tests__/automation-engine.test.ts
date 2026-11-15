@@ -97,11 +97,56 @@ describe('Booking Ops Automation Engine v1', () => {
     expect(plan.nextAction).toBe('Запланировать уборку');
   });
 
-  it('keeps task types unique when automation is recalculated', () => {
+  it('does not propose existing work when automation is recalculated', () => {
     const first = planBookingOpsPreparation(booking(), []);
     const existing = first.items.map((item) => task(item.taskType, 'open'));
     const second = planBookingOpsPreparation(booking(), existing);
-    expect(new Set(second.items.map((item) => item.taskType)).size).toBe(second.items.length);
+    expect(second.items).toEqual([]);
+    expect(second.requiredTaskTypes).toEqual(first.requiredTaskTypes);
+    expect(second.unitReadinessStatus).toBe('cleaning_pending');
+    expect(planBookingOpsPreparation(booking(), existing)).toEqual(second);
+  });
+
+  it.each(['open', 'in_progress', 'blocked'] as const)(
+    'preserves %s cleaning work without treating it as complete',
+    (status) => {
+      const plan = planBookingOpsPreparation(booking(), [task('cleaning_needed', status)]);
+      expect(plan.items.map((item) => item.taskType)).toEqual([
+        'linen_pickup_needed',
+        'inspection_needed',
+        'supplies_check_needed',
+        'unit_ready_confirmation',
+      ]);
+      expect(plan.unitReadinessStatus).toBe(status === 'blocked' ? 'blocked' : 'cleaning_pending');
+    },
+  );
+
+  it('preserves active alias tasks without advancing readiness', () => {
+    const plan = planBookingOpsPreparation(booking(), [
+      task('cleaning_done', 'in_progress'),
+      task('linen_replaced', 'open'),
+      task('unit_inspection_needed', 'open'),
+      task('supplies_check_needed', 'open'),
+      task('unit_ready_for_next_guest', 'open'),
+    ]);
+    expect(plan.items).toEqual([]);
+    expect(plan.unitReadinessStatus).toBe('cleaning_pending');
+  });
+
+  it('converges to ready as existing operator tasks are completed without proposing duplicates', () => {
+    const first = planBookingOpsPreparation(booking(), []);
+    const tasks = first.items.map((item) => task(item.taskType, 'open'));
+    const stages = ['linen_pending', 'inspection_pending', 'inspection_pending', 'inspection_pending', 'ready'];
+
+    tasks.forEach((current, index) => {
+      current.status = 'completed';
+      current.completedAt = '2026-06-29T09:00:00.000Z';
+      const plan = planBookingOpsPreparation(booking(), tasks);
+      expect(plan.items).toEqual([]);
+      expect(plan.unitReadinessStatus).toBe(stages[index]);
+      expect(planBookingOpsPreparation(booking(), tasks)).toEqual(plan);
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it('respects completed and cancelled tasks', () => {
