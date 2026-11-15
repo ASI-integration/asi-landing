@@ -44,7 +44,7 @@ const navItems: DashboardNavItem[] = [
   { href: '/dashboard/communication', key: 'communication', label: 'Коммуникация' },
   { href: '/dashboard/ops', key: 'operations', label: 'Операции' },
   { href: '/dashboard/reservations', key: 'bookings', label: 'Единый календарь' },
-  { href: '/dashboard/booking-ops', key: 'bookingOps', label: 'Операции по броням' },
+  { href: '/dashboard/bookings-simple', key: 'bookingOps', label: 'Бронирования' },
   { href: '/dashboard/property-knowledge', key: 'propertyKnowledge', label: 'Данные объектов' },
   { href: '/dashboard/automations', key: 'automations', label: 'Автоматизация' },
   { href: '/dashboard/roadmap', key: 'roadmap', label: 'План ASI' },
