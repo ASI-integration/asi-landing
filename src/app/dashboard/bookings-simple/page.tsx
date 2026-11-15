@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CrmAccessGuard } from '@/components/CrmAccessGuard';
+import { useSession } from '@/contexts/SessionContext';
 import { BOOKING_OPS_STATUS_LABELS_RU, type BookingOpsRecord } from '@/lib/booking-ops/types';
 import { isSyntheticBooking, summarizeRealBookings } from '@/lib/booking-ops/simple-dashboard';
 import { readResponseJson } from '@/lib/safeResponseJson';
@@ -19,12 +20,16 @@ function formatDate(value: string | null): string {
  * the advanced console; none of its operations or side effects are copied here.
  */
 export default function SimpleBookingsPage() {
+  const { session, loading: sessionLoading } = useSession();
+  const canRead = !sessionLoading && session?.isCrmOperator === true;
   const [records, setRecords] = useState<BookingOpsRecord[]>([]);
   const [showTest, setShowTest] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
+    // Do not issue even read-only calls until account and operator scope are verified.
+    if (!canRead) return;
     setLoading(true);
     setError(null);
     try {
@@ -46,9 +51,11 @@ export default function SimpleBookingsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canRead]);
 
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    if (canRead) void reload();
+  }, [canRead, reload]);
 
   const real = useMemo(() => records.filter((record) => !isSyntheticBooking(record)), [records]);
   const visible = useMemo(
@@ -68,7 +75,7 @@ export default function SimpleBookingsPage() {
               Заезды, даты и вопросы, которые требуют вашего внимания.
             </p>
           </div>
-          <button type="button" onClick={() => void reload()}
+          <button type="button" onClick={() => void reload()} disabled={!canRead || loading}
             className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-medium text-slate-900 hover:bg-slate-50">
             Обновить
           </button>
