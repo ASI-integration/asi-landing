@@ -53,8 +53,12 @@ class ObserverHardeningTests(unittest.TestCase):
 
     def root_stat(self, path, *args, **kwargs):
         info = self.native_stat(path, *args, **kwargs)
-        # Only the descriptor-relative lock metadata needs a matching uid.
-        return owned(info) if path == "active.lock" and "dir_fd" in kwargs else info
+        # The observer binds every descriptor-relative receipt to its opened
+        # inode. Simulate root ownership for disposable marker fixtures too,
+        # while keeping the real inode/dev/mode/size/timestamps unchanged.
+        private_names = {"active.lock", "prepared.json", "success.json",
+                         "recovery.json", "original.env.private"}
+        return owned(info) if path in private_names and "dir_fd" in kwargs else info
 
     def make_lock(self, mode=0o600):
         path = self.root / "active.lock"
