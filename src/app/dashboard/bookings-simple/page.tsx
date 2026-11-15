@@ -3,14 +3,9 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CrmAccessGuard } from '@/components/CrmAccessGuard';
-import type { BookingOpsRecord } from '@/lib/booking-ops/types';
+import { BOOKING_OPS_STATUS_LABELS_RU, type BookingOpsRecord } from '@/lib/booking-ops/types';
+import { isSyntheticBooking, summarizeRealBookings } from '@/lib/booking-ops/simple-dashboard';
 import { readResponseJson } from '@/lib/safeResponseJson';
-
-function isSynthetic(record: BookingOpsRecord): boolean {
-  return /SYNTHETIC|MOCK|E2E|TEST/i.test(
-    [record.bookingId, record.propertyLabel].filter(Boolean).join(' '),
-  );
-}
 
 function formatDate(value: string | null): string {
   if (!value) return 'Дата не указана';
@@ -55,19 +50,13 @@ export default function SimpleBookingsPage() {
 
   useEffect(() => { void reload(); }, [reload]);
 
-  const real = useMemo(() => records.filter((record) => !isSynthetic(record)), [records]);
+  const real = useMemo(() => records.filter((record) => !isSyntheticBooking(record)), [records]);
   const visible = useMemo(
     () => (showTest ? records : real).slice().sort((a, b) =>
       (a.checkInAt || '').localeCompare(b.checkInAt || '')),
     [records, real, showTest],
   );
-  const attention = real.filter((record) => record.isBlocked).length;
-  const now = Date.now();
-  const upcoming = real.filter((record) => {
-    if (!record.checkInAt) return false;
-    const at = new Date(record.checkInAt).getTime();
-    return Number.isFinite(at) && at >= now && at <= now + 7 * 86400000;
-  }).length;
+  const summary = summarizeRealBookings(records, Date.now());
 
   return (
     <CrmAccessGuard>
@@ -76,7 +65,7 @@ export default function SimpleBookingsPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-slate-900">Бронирования</h1>
             <p className="mt-2 text-slate-600">
-              Самое важное по объектам. Подробные технические настройки скрыты.
+              Заезды, даты и вопросы, которые требуют вашего внимания.
             </p>
           </div>
           <button type="button" onClick={() => void reload()}
@@ -92,9 +81,9 @@ export default function SimpleBookingsPage() {
         {!error && !loading ? (
           <section aria-label="Сводка бронирований" className="grid gap-4 sm:grid-cols-3">
             {[
-              { title: 'Бронирований', value: real.length },
-              { title: 'Нужно внимание', value: attention },
-              { title: 'Заезды за 7 дней', value: upcoming },
+              { title: 'Бронирований', value: summary.total },
+              { title: 'Нужно внимание', value: summary.attention },
+              { title: 'Заезды за 7 дней', value: summary.upcoming },
             ].map((stat) => (
               <div key={stat.title} className="rounded-xl border border-slate-200 bg-white p-5">
                 <p className="text-sm text-slate-500">{stat.title}</p>
@@ -141,11 +130,11 @@ export default function SimpleBookingsPage() {
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 text-xs">
-                      {isSynthetic(record) ? <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">Тест</span> : null}
+                      {isSyntheticBooking(record) ? <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">Тест</span> : null}
                       <span className={record.isBlocked
                         ? 'rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-900'
-                        : 'rounded-full bg-emerald-50 px-3 py-1 font-semibold text-emerald-800'}>
-                        {record.isBlocked ? 'Требует внимания' : 'Без блокировки'}
+                        : 'rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-700'}>
+                        {record.isBlocked ? 'Нужна проверка' : BOOKING_OPS_STATUS_LABELS_RU[record.opsStatus]}
                       </span>
                     </div>
                   </div>
@@ -158,7 +147,7 @@ export default function SimpleBookingsPage() {
         <div className="flex flex-wrap gap-4 text-sm">
           <Link href="/dashboard/properties" className="font-medium text-blue-700 hover:underline">Мои объекты</Link>
           <Link href="/dashboard/booking-ops" className="font-medium text-slate-600 hover:underline">
-            Расширенный режим оператора
+            Расширенные инструменты оператора
           </Link>
         </div>
       </main>
