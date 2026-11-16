@@ -58,6 +58,10 @@ export async function requireOtaFinanceScope(
   if (membership.error) reject('FINANCE_MEMBERSHIP_LOOKUP_UNAVAILABLE', 503);
   if (membership.data?.role !== 'owner' && membership.data?.role !== 'manager')
     reject('FINANCE_ACCOUNT_FORBIDDEN', 403);
+  // Until a finance-specific delegation policy is approved, only the
+  // owner can append contracts, statement imports or operator reviews.
+  if (request.action !== 'read' && membership.data.role !== 'owner')
+    reject('FINANCE_WRITE_REQUIRES_OWNER', 403);
 
   const property = await supabase
     .from('properties')
