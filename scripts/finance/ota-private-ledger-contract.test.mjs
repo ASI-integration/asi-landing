@@ -40,7 +40,7 @@ test('all family records have tenant account UUID and a property boundary',()=>{
     assert(start>=0 && end>start);
     const block=sql.slice(start,end);
     assert.match(block,/account_id uuid not null/);
-    assert.match(block,/property_id text not null/);
+    assert.match(block,/property_id uuid not null/);
   }
 });
 
@@ -73,4 +73,17 @@ test('schema stores a review as a separate immutable event, not as bank proof',(
   assert.match(sql,/create table ota_finance_private.statement_reviews/);
   assert.match(sql,/outcome text not null check \(outcome in \('accepted_for_review','rejected'\)\)/);
   assert.doesNotMatch(sql,/\bgrant update\b/i);
+});
+
+test('canonical property ownership and review actor use existing app identities',()=>{
+  assert.match(sql,/create unique index if not exists properties_id_account_for_ota_finance/);
+  assert.equal((sql.match(/references public\.properties \(id, account_id\)/g)||[]).length,4);
+  assert.match(sql,/references public\.users\(id\)/);
+  assert.doesNotMatch(sql,/references auth\.users/);
+});
+
+test('fee contract time windows cannot overlap for the same scope',()=>{
+  assert.match(sql,/create extension if not exists btree_gist/);
+  assert.match(sql,/fee_rule_no_overlapping_periods\s+exclude using gist/);
+  assert.match(sql,/daterange\(effective_from, effective_through, '\[\]'\) with &&/);
 });
