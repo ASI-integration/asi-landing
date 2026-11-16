@@ -101,3 +101,20 @@ test('CLI-generated pending migration matches tested DDL byte-for-byte after env
   assert.match(migration,/SOURCE ONLY\. NOT APPLIED TO LIVE OR STAGING/);
   assert.doesNotMatch(migration,/^\s*(begin|commit);\s*$/im);
 });
+
+test('transaction audit migration stays private, append-only and unverified', () => {
+  const audit = readFileSync(new URL(
+    '../../supabase/migrations/20261116153907_ota_finance_transaction_audit_v1.sql',
+    import.meta.url), 'utf8');
+  assert.match(audit,/create table ota_finance_private\.operation_audit/i);
+  assert.match(audit,/event_count integer not null check \(event_count between 1 and 50\)/i);
+  assert.match(audit,/outcome = 'COMMITTED_UNVERIFIED'/i);
+  assert.match(audit,/constraint finance_audit_statement_scope_fk/i);
+  assert.match(audit,/constraint finance_audit_property_tenant_fk/i);
+  assert.match(audit,/unique \(account_id, operation_id\)/i);
+  assert.match(audit,/alter table ota_finance_private\.operation_audit enable row level security/i);
+  assert.match(audit,/from public, anon, authenticated, service_role/i);
+  assert.match(audit,/grant select, insert on table ota_finance_private\.operation_audit to service_role/i);
+  assert.doesNotMatch(audit,/grant\s+(update|delete|all)\b/i);
+  assert.doesNotMatch(audit,/\bBANK_VERIFIED\b/);
+});
