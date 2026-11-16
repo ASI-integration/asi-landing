@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { CrmAccessGuard } from '@/components/CrmAccessGuard';
 import { readResponseJson } from '@/lib/safeResponseJson';
+import { PILOT_READINESS_CHECK_LABELS_RU } from '@/lib/pilot-readiness/types';
 import type { PilotReadinessCheck, PilotReadinessResult } from '@/lib/pilot-readiness/types';
 
 type ReadinessResponse = {
@@ -26,6 +27,7 @@ function PrepareWizardInner() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [isOpsAdmin, setIsOpsAdmin] = useState(false);
+  const [showExample, setShowExample] = useState(false);
 
   const [objectName, setObjectName] = useState('');
   const [address, setAddress] = useState('');
@@ -187,6 +189,59 @@ function PrepareWizardInner() {
         <p className="text-slate-500">Загрузка…</p>
       ) : (
         <>
+          {results.length === 0 ? (
+            <section aria-labelledby="prepare-empty-title" className="rounded-xl border border-slate-200 bg-slate-50 p-6 space-y-3">
+              <h2 id="prepare-empty-title" className="text-xl font-semibold text-slate-900">
+                Пока нет объектов для подготовки
+              </h2>
+              <p className="text-sm text-slate-700">
+                Начните с вымышленного примера ниже: он открывается только на этой странице
+                и не сохраняется. Для создания учебного черновика используйте отдельную
+                тестовую среду. Не вводите реальные адреса, пароли и контакты.
+              </p>
+              <p className="text-sm text-slate-600">
+                Эта подсказка не включает тестовый режим. Создание черновика сохраняет данные
+                в текущей среде. Сам черновик ещё не означает готовность к пилоту.
+              </p>
+              <h3 className="font-medium text-slate-900">Что потребуется для готовности</h3>
+              <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
+                {Object.entries(PILOT_READINESS_CHECK_LABELS_RU).map(([id, label]) => (
+                  <li key={id}>{label}</li>
+                ))}
+              </ul>
+              <p className="text-sm text-slate-600">
+                Оператора для эскалаций нужно назначить отдельно: в этом мастере нет поля назначения.
+              </p>
+              <button
+                type="button"
+                aria-expanded={showExample}
+                aria-controls="prepare-synthetic-example"
+                onClick={() => setShowExample((visible) => !visible)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium"
+              >
+                {showExample ? 'Скрыть учебный пример' : 'Посмотреть учебный пример без сохранения'}
+              </button>
+              {showExample ? (
+                <div id="prepare-synthetic-example" className="rounded-lg border border-slate-200 bg-white p-4 space-y-2 text-sm text-slate-700">
+                  <h3 className="font-semibold text-slate-900">Учебная квартира — вымышленный пример</h3>
+                  <p>Это образец заполнения, а не созданный объект и не результат проверки готовности.</p>
+                  <ul className="list-disc space-y-1 pl-5">
+                    <li>Адрес: Тестовый город, Учебная улица, дом 1 — вымышленный адрес.</li>
+                    <li>Описание: учебная квартира на двоих. Правила: без курения и вечеринок.</li>
+                    <li>Заезд: 15:00. Выезд: 12:00.</li>
+                    <li>Инструкция доступа: учебный вход со двора, реальные коды не нужны.</li>
+                    <li>Фото: отметка «добавим позже». Канал бронирования: вручную.</li>
+                    <li>Режим коммуникации: ручной. Оператора для эскалаций назначают отдельно.</li>
+                  </ul>
+                  <p>
+                    В тестовой среде заполните черновик, сохраните недостающие блоки и обновите
+                    проверку. Готовность подтверждается только после выполнения всех требований.
+                  </p>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
           <section className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
             <label className="block text-sm">
               <span className="font-medium text-slate-700">Объект</span>
@@ -242,6 +297,20 @@ function PrepareWizardInner() {
                   {selected.ready ? 'Готов к пилоту' : 'Не готов'}
                 </span>
               </div>
+              <ul aria-label="Требования готовности" className="mt-4 space-y-2 text-sm text-slate-700">
+                {selected.checks.map((check) => (
+                  <li key={check.id}>
+                    <span className="font-medium">{check.ok ? 'Готово' : 'Требуется'}: {check.labelRu}</span>
+                    {check.detailRu ? <p className="text-slate-600">{check.detailRu}</p> : null}
+                    {check.id === 'operator' && !check.ok ? (
+                      <p className="text-slate-600">Назначьте оператора для эскалаций отдельно, затем обновите проверку.</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+              <button type="button" disabled={saving} onClick={() => void load()} className="mt-4 rounded-lg border border-slate-300 px-4 py-2 text-sm">
+                Обновить проверку
+              </button>
               {!selected.ready && missingChecks.length > 0 ? (
                 <p className="mt-3 text-sm text-slate-600">
                   Не хватает: {missingChecks.map((check) => check.labelRu).join(', ')}
