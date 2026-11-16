@@ -94,4 +94,40 @@ class PublisherNegativeTests(unittest.TestCase):
             blockers=p.verify_publisher_review()
         self.assertIn("PUBLISHER_SOURCE_NOT_APPROVED",blockers)
 
+    def test_restart_failure_restores_old_symlink(self):
+        with tempfile.TemporaryDirectory() as t:
+            stage=pathlib.Path(t)/"stage"
+            old=stage/"releases"/"old"
+            target=stage/"releases"/"new"
+            old.mkdir(parents=True)
+            current=stage/"current"
+            current.symlink_to(old)
+            lock=pathlib.Path(t)/"owner.lock"
+            calls=[]
+            def fake_cmd(*args,**kwargs):
+                if args[0]=="tar":
+                    (target/"release-meta.json").write_text(
+                        json.dumps({"gitSha":p.SHA}))
+                if args[:2]==("systemctl","restart"):
+                    calls.append("restart")
+                    if len(calls)==1:raise p.Blocked("SIMULATED_RESTART_FAILURE")
+                return ""
+            with patch.object(p,"STAGE",stage),patch.object(p,"CURRENT",current), \
+                 patch.object(p,"OLD",old),patch.object(p,"TARGET",target), \
+                 patch.object(p,"LOCK",lock),patch.object(p,"preflight",
+                    return_value={"status":"READY_FOR_OWNER_CONFIRMATION"}), \
+                 patch.object(p,"verify_stage",return_value=str(old)), \
+                 patch.object(p,"verify_artifact"),patch.object(p,"verify_archive_members"), \
+                 patch.object(p,"cmd",side_effect=fake_cmd), \
+                 patch.object(p,"get",return_value=(200,b"")), \
+                 patch.object(p.os,"geteuid",return_value=0), \
+                 patch.object(p.sys.stdin,"isatty",return_value=True), \
+                 patch("builtins.input",return_value=
+                    "PROMOTE-PR664-"+p.SHA[:12]+"-"+p.ARTSHA[:12]):
+                with patch("builtins.print"):
+                    with self.assertRaisesRegex(p.Blocked,"PROMOTION_FAILED_ROLLED_BACK"):
+                        p.promote()
+            self.assertEqual(current.resolve(),old)
+            self.assertEqual(len(calls),2)
+
 if __name__=="__main__":unittest.main()
