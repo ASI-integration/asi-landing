@@ -46,8 +46,12 @@ def propose_release_meta(checkout: Path, expected_sha: str) -> dict:
     source_head = git(checkout, "rev-parse", "--verify", "HEAD")
     if source_head != expected_sha:
         raise ReleaseIdentityBlocked("GIT_HEAD_NOT_REVIEWED_COMMIT")
-    if git(checkout, "status", "--porcelain", "--untracked-files=no"):
-        raise ReleaseIdentityBlocked("TRACKED_SOURCE_CHANGES")
+    # Include untracked source files. Only the independently verified
+    # release-meta.json artifact may be untracked after installation.
+    # Ignoring all untracked paths would permit an unreviewed executable route.
+    status = git(checkout, "status", "--porcelain", "--untracked-files=all")
+    if any(line != "?? release-meta.json" for line in status.splitlines()):
+        raise ReleaseIdentityBlocked("CHECKOUT_UNREVIEWED_FILES")
     tree = git(checkout, "rev-parse", "HEAD^{tree}")
     if not SHA40.fullmatch(tree):
         raise ReleaseIdentityBlocked("GIT_TREE_INVALID")
