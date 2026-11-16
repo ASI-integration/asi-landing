@@ -162,3 +162,28 @@ including the 2026 changes to automatic Data API table exposure.
   operation, or production/staging database write was performed.
 - The migration MUST remain in Draft until owner-approved release controls,
   source diff review and strict target-identity verification are complete.
+
+## V1.3 private read adapter (source only)
+
+- `src/lib/ota-finance/private-reader.ts` introduces a server-only, injected
+  PostgreSQL reader for the **non-exposed** `ota_finance_private` schema.
+  It does not create a DB pool, connection string, API route, mutation, public
+  Data API grant, secret, OTA call, or bank transfer.
+- Every method performs fresh `requireOtaFinanceScope` authorization:
+  tenant + property for statement/fee read; account + property + exact legacy
+  booking reference for cash-event read. All SQL uses fixed table/column
+  names with positional bind parameters; no interpolated user SQL.
+- Read bounds are 1–100 rows, default 50. Returned account/property/booking
+  identities are rechecked as a last fail-closed guard; no privileged
+  cross-tenant response is accepted. Money is returned as decimal **text**
+  rather than lossy JS Number conversion. Imported statements and cash events
+  remain explicitly `UNVERIFIED_OPERATOR_IMPORT`.
+- `src/lib/ota-finance/__tests__/private-reader.test.ts`: eight additional
+  mock-boundary regressions. The normal PR Validation source job now runs both
+  focused access and read-adapter suites alongside the static SQL tests.
+- This is **not yet a production persistence integration**. The future adapter
+  must obtain a separately controlled PostgreSQL connection, enforce
+  authorized role/operation scope, and guarantee revocation-aware audit
+  before exposing private data. Append/write operations remain disabled.
+- The 2026-11-16 current-head CI and release-governance status must be checked
+  independently; no merge, migration apply, or staging deployment is authorized.
