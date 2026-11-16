@@ -11,6 +11,13 @@ BEGIN
      OR nullif(trim(p_property_id),'') IS NULL OR nullif(trim(p_actor_id),'') IS NULL THEN
     RAISE EXCEPTION 'fixture_parameters_invalid';
   END IF;
+  -- This RPC is intentionally scoped to the single owner-selected synthetic record.
+  -- It cannot be used as a generic backdoor for marking other tenant bookings.
+  IF p_record_id IS DISTINCT FROM '5477f7dd-2d60-4a3d-9212-c74e8d36119e'::uuid
+     OR p_account_id IS DISTINCT FROM '9623421a-3b3d-4331-b126-8ca63c5611f1'
+     OR p_property_id IS DISTINCT FROM '0bc3d3dd-678c-4d42-b1a1-d9cce39d53ac' THEN
+    RAISE EXCEPTION 'fixture_record_not_owner_pinned';
+  END IF;
   SELECT * INTO v FROM public.booking_ops_records
     WHERE id=p_record_id AND account_id=p_account_id AND property_id=p_property_id
     FOR UPDATE;
