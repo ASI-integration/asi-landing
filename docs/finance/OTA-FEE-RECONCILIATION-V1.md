@@ -32,6 +32,22 @@ Assume a booking gross of 1,000.00 RUB (100,000 kopecks). Platform A hypothetica
 
 Another provider might remit the whole 1,000.00 RUB on Nov 10 and charge its fee as a separate bank debit on Dec 5. The latter must appear as outstanding through Dec 4 and settled only after the cleared Dec 5 event. This is distinct from withheld commission.
 
+## Offline normalized CSV intake candidate (V1.1; not a provider connector)
+
+`src/lib/ota-finance/statement-csv.ts` offers `parseOtaCashCsv`, a **pure** importer for a deliberately strict, operator-normalized CSV export. A real provider's raw file may use different columns and must first be mapped and reviewed by an authorized human.
+
+The supported nine-column header is exactly:
+
+```csv
+account_id,property_id,booking_id,provider,currency,event_id,kind,amount_minor,settled_on
+```
+
+`amount_minor` is an **integer** (e.g. 84800 = 848.00 RUB). Dates use `YYYY-MM-DD`. The permitted cash kinds are `payout_received`, `payout_adjustment_credit`, `payout_adjustment_debit`, `refund_debit`, and `separate_fee_paid`.
+
+The caller must explicitly supply a tenant account, property, provider, currency, statement ID and as-of date. An import with another tenant/property/provider/currency, malformed money/date, unknown columns, duplicated-but-conflicting event identifiers, or purported future-cleared transactions **fails closed**. Even a successful result remains `UNVERIFIED_OPERATOR_IMPORT`; it is **not bank evidence**, not a record of completed payout and not evidence of real provider integration.
+
+This candidate does not store real statements, perform HTTP requests, mutate booking metadata, send messages, schedule payouts or publish prices. It has no credentials, no Supabase connection and no banking access. The scope is limited to bounded CSV validation and deterministic normalization before a separate audit/approval system exists.
+
 ## Evidence gates for pilot activation (not yet met)
 
 1. Obtain one participating property, OTA statements with explicit fee terms and payout calendars, an existing PMS/CM account and consent for controlled read-only processing.
