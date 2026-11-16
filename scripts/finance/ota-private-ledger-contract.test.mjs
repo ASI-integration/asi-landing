@@ -87,3 +87,17 @@ test('fee contract time windows cannot overlap for the same scope',()=>{
   assert.match(sql,/fee_rule_no_overlapping_periods\s+exclude using gist/);
   assert.match(sql,/daterange\(effective_from, effective_through, '\[\]'\) with &&/);
 });
+
+test('CLI-generated pending migration matches tested DDL byte-for-byte after envelope removal',()=>{
+  const migration = readFileSync(new URL(
+    '../../supabase/migrations/20261116151659_ota_finance_private_ledger_v1.sql',
+    import.meta.url), 'utf8');
+  const ddl = content => {
+    const at = content.indexOf('create extension if not exists btree_gist;');
+    assert(at >= 0, 'DDL starts at btree_gist extension');
+    return content.slice(at).replace(/\ncommit;\s*$/,'').trim();
+  };
+  assert.equal(ddl(migration), ddl(sql));
+  assert.match(migration,/SOURCE ONLY\. NOT APPLIED TO LIVE OR STAGING/);
+  assert.doesNotMatch(migration,/^\s*(begin|commit);\s*$/im);
+});
