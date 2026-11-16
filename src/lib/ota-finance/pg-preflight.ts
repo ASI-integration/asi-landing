@@ -8,10 +8,13 @@ import type { FinanceTransactionClient, FinanceTransactionPool } from './transac
  * No database URL, password, HTTP endpoint or pool is instantiated here.
  *
  * PostgreSQL itself cannot prove client-side TLS certificate verification.
+ * The staging role MUST be a distinct LOGIN role provisioned by a separately
+ * reviewed deployment. The Supabase service_role is NOLOGIN and cannot be
+ * used as a direct PostgreSQL login in staging.
  */
 export type FinancePgTarget = Readonly<{
   database: string;
-  role: 'service_role';
+  role: 'service_role' | 'asi_finance_runtime';
   minimumServerVersion: 170000;
   kind: 'disposable' | 'staging_readiness_only';
 }>;
@@ -31,6 +34,7 @@ const REQUIRED = Object.freeze([
 const SERVER_IDENTITY = `select current_database()::text as database,
   current_user::text as role,
   current_setting('server_version_num')::integer as version,
+  exists(select 1 from pg_roles where rolname = current_user and rolcanlogin) as role_can_login,
   has_schema_privilege(current_user, 'ota_finance_private', 'USAGE') as schema_usage`;
 
 const TABLE_PERMISSIONS = `with required(name) as (
@@ -51,14 +55,23 @@ order by r.name`;
 
 function validateTarget(target: FinancePgTarget): void {
   if (!target || !/^[a-z][a-z0-9_]{0,62}$/.test(target.database)
-      || target.role !== 'service_role' || target.minimumServerVersion !== 170000
+      || !['service_role', 'asi_finance_runtime'].includes(target.role)
+      || target.minimumServerVersion !== 170000
       || !['disposable', 'staging_readiness_only'].includes(target.kind)) {
     throw new FinancePgPreflightError('FINANCE_PG_TARGET_CONFIGURATION_REJECTED');
   }
+  // Supabase service_role is NOLOGIN. It is usable in disposable PG fixtures
+  // via SET ROLE but is NOT a valid staging direct-connection identity.
+  if (target.kind === 'staging_readiness_only' && target.role !== 'asi_finance_runtime')
+    throw new FinancePgPreflightError('FINANCE_PG_STAGING_DEDICATED_ROLE_REQUIRED');
+  if (target.kind === 'disposable' && target.role !== 'service_role')
+    throw new FinancePgPreflightError('FINANCE_PG_DISPOSABLE_SERVICE_ROLE_REQUIRED');
 }
 
 /**
  * Verify the actual connected server and every private-table privilege.
+ * A dedicated staging role must be provisioned separately with narrow grants
+ * and RLS access; this module NEVER creates a credential or a database role.
  * This is NOT an external TLS/hostname proof or a bank/OTA verification.
  */
 export async function verifyFinancePgSession(
@@ -67,13 +80,15 @@ export async function verifyFinancePgSession(
 ): Promise<void> {
   validateTarget(target);
   const metadata = await client.query<{
-    database: string; role: string; version: number; schema_usage: boolean;
+    database: string; role: string; version: number;
+    role_can_login: boolean; schema_usage: boolean;
   }>(SERVER_IDENTITY);
   if (metadata.rows.length !== 1
       || metadata.rows[0].database !== target.database
       || metadata.rows[0].role !== target.role
       || metadata.rows[0].version < target.minimumServerVersion
-      || metadata.rows[0].schema_usage !== true) {
+      || metadata.rows[0].schema_usage !== true
+      || (target.kind === 'staging_readiness_only' && metadata.rows[0].role_can_login !== true)) {
     throw new FinancePgPreflightError('FINANCE_PG_IDENTITY_OR_VERSION_MISMATCH');
   }
 
