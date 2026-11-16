@@ -12,16 +12,17 @@ accounts, and external APIs remain unchanged.
 - `public.account_members.user_id` is UUID. Existing policy exposes membership
   only to service-role access; ordinary `authenticated` users do not have a
   usable account-membership SELECT policy.
-- `public.booking_ops_records.account_id` and `property_id` are **text**.
+- `public.booking_ops_records.account_id` and `property_id` are **text**, whereas `public.properties.id` and `account_id` are UUIDs.
 - `public.dist_channel_reservations.account_id` is **uuid**.
 - Existing reservation ingestion and reconciliation tables do not establish
   verified real OTA cash settlement or bank statements.
 
 **Consequence:** the proposed ledger uses `account_id uuid` with FK to
-`public.accounts(id)` and keeps the original **text** property and booking
-identifiers. No implicit cast from text to UUID is permitted; an explicit
-account-resolution mapping and property-ownership check is mandatory at the
-backend boundary.
+`public.accounts(id)` and now records canonical `property_id uuid`, with a composite foreign key
+to `public.properties(id, account_id)` to reject mismatched tenant ownership.
+Legacy booking property references are **text** and must be resolved explicitly;
+`booking_id` stays text. No automatic legacy cast or fallback to a first account
+is permitted; missing/ambiguous mappings must be denied.
 
 ## Private schema and access
 
@@ -46,6 +47,10 @@ not enough by itself: the server MUST authenticate the caller, verify
 `public.account_members (account_id,user_id)` using a backend-only trusted
 client and separately verify property/booking ownership **before each read
 and write**. No service-role key may appear in browser bundles.
+
+Review actors reference `public.users(id)` (the existing application identity model),
+not `auth.users`. The migration adds one composite unique index to
+`public.properties`; this shared-table change must be independently reviewed.
 
 No `UPDATE` or `DELETE` privileges are granted to service_role on these
 four financial tables; corrections are appended as new events. Privileged
