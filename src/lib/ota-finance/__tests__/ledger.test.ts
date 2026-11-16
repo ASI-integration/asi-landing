@@ -166,6 +166,45 @@ describe('OTA finance v1 ??? deterministic, non-writing calculation',()=>{
     expect(p.warnings).toContain('payout_schedule_not_provided');
   });
 });
+describe('OTA payout settlement edge cases and safe accounting boundaries', () => {
+  it('balances separate provider adjustment credit/debit without inventing a second commission', () => {
+    const movements = [
+      cash('payout_received', 84_800, '2026-11-10', 'statement-original'),
+      cash('payout_adjustment_credit', 2_700, '2026-11-12', 'statement-correction-credit'),
+      cash('payout_adjustment_debit', 2_700, '2026-11-14', 'statement-correction-debit'),
+    ];
+    const position = check({ movements });
+    expect(position.actualPayoutMinor).toBe(84_800);
+    expect(position.cashDifferenceMinor).toBe(0);
+    expect(position.otaCommissionMinor).toBe(15_200);
+    expect(position.processedMovementCount).toBe(3);
+  });
+  it('does not count future bank clearing, even if a provider says payout was initiated', () => {
+    const movements = [
+      cash('payout_received', 84_800, '2026-11-22', 'pending-bank-clearance'),
+    ];
+    const today = check({ movements, asOfDate: '2026-11-21', expectedPayoutOn: '2026-11-20' });
+    expect(today.payoutStatus).toBe('overdue');
+    expect(today.actualPayoutMinor).toBe(0);
+    expect(today.ignoredFutureMovementIds).toEqual(['pending-bank-clearance']);
+    const posted = check({ movements, asOfDate: '2026-11-22', expectedPayoutOn: '2026-11-20' });
+    expect(posted.payoutStatus).toBe('settled');
+    expect(posted.cashDifferenceMinor).toBe(0);
+  });
+  it('refuses to attribute bank movements to a different reservation of the same property', () => {
+    expect(() => check({ movements: [
+      { ...cash('payout_received', 84_800, '2026-11-10', 'wrong-booking'), bookingId:'booking-2' },
+    ] })).toThrow('cash_event_scope_mismatch');
+  });
+  it('treats the provider fee contract end date as inclusive, without overlapping a later version', () => {
+    const old = { ...withheld, validTo: '2026-11-01' };
+    const newVersion = { ...withheld, ruleId:'ota-a-next',validFrom:'2026-11-02',
+      commissionBps: 1750 };
+    expect(chooseFeeRule(snapshot, [newVersion, old]).ruleId).toBe('ota-a-2026');
+    expect(check({ rules: [newVersion, old] }).otaCommissionMinor).toBe(15_200);
+  });
+});
+
 const invoice: InvoiceAllocation = {
   invoiceId:'cm-inv-1',accountId:'tenant-1',propertyId:'property-1',
   currency:'RUB',invoiceOn:'2026-11-10',periodFrom:'2026-11-01',periodTo:'2026-11-30',
