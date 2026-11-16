@@ -1,4 +1,4 @@
-# Strigunov OTA Finance ??? private persistence candidate V1
+# Strigunov OTA Finance — private persistence candidate V1
 
 **Status: DESIGN / SOURCE CANDIDATE ONLY. NOT APPLIED.** This document and its companion
 `docs/finance/sql/ota-finance-private-ledger-candidate.sql` are not production migrations.
@@ -94,13 +94,48 @@ database owners can still alter data, so this is not tamper-proof archival.
 References: Supabase *Row Level Security* and *Securing Your API* guides,
 including the 2026 changes to automatic Data API table exposure.
 
-## V1.1 server-side gate and disposable integration evidence (candidate)
+## V1.2 consolidated server authorization and disposable PostgreSQL rehearsal
 
-- `src/lib/ota-finance/private-scope.ts` is an **unwired backend helper**. It calls `auth.getUser(accessToken)` and then, through an injected trusted server-only client, looks up `public.account_members` and `public.properties`. Every match requires a canonical UUID account ID and property ID. It ignores caller-provided user IDs, and fails closed on membership, role, property or Auth errors.
-- `owner` and `admin` can request an **append authorization decision**; `manager` can request read authorization only. This is a deliberately conservative preliminary allowlist, not a claim that the real system already provisions these roles. Verify supported roles in the pilot.
-- This module does not directly expose a financial route, instantiate an administrative client, write to the database or integrate with a bank. Integrating it into authenticated server endpoints, audit logging and a safe financial write transaction remains required.
-- `src/lib/ota-finance/__tests__/private-scope.test.ts`: ten negative/positive scope tests. They use synthetic identities and a fake Supabase client, so they **cannot prove real JWT validation** or actual browser/server separation.
-- `scripts/finance/ota-private-ledger.pg.integration.test.mjs`: a PostgreSQL 17-only integration check on the **existing temporary GitHub Actions database port 5433**, with a fail-closed database-name/host guard. It creates synthetic roles, account/property fixtures and proves RLS, privileges, composite FK, duplicate-event rejection and append-only service permissions. Its test state is removed on success; the service itself is disposable.
-- The PR workflow is configured to run this real PostgreSQL test independently of static tests. A passing test is **not** evidence of live Supabase migration or bank settlement.
+- One authorization helper remains: `src/lib/ota-finance/access.ts`. It accepts the
+  application's own validated iron-session, then checks `public.account_members`
+  and `public.properties` with a backend-only trusted client. It never trusts
+  a request-body user ID or a guessed legacy account. `owner` can request
+  read/import/review/fee-rule operations; `manager` can request read only;
+  `operator`, missing or invalid membership, absent property and DB failures
+  fail closed. No financial route or database adapter is activated.
+- The incompatible `private-scope.ts` proposal using Supabase Auth access tokens
+  has been removed together with its tests. The ASI application has its own
+  `public.users` / iron-session auth model; mixing these would risk silently
+  rejecting legitimate users or creating a second authorization surface.
+- When a legacy booking reference is supplied, the guard accepts it only
+  if exactly one matching `booking_ops_records` row has the exact canonical
+  account and property string. Resolving arbitrary legacy aliases requires a
+  future explicit, reviewed mapping table, never an implicit cast.
+- `src/lib/ota-finance/__tests__/access.test.ts` tests unsigned callers,
+  missing sessions, manager write denial, cross-tenant property checks,
+  ambiguous booking identity, DB failures and exact membership authorization.
+  These tests remain source-only until Vitest/CI results are confirmed.
+- `scripts/finance/ota-private-ledger.pg.integration.test.mjs` checks real
+  PostgreSQL 17 DDL, role privileges, RLS, FK tenant isolation, date exclusion,
+  forged bank settlement markers, immutable review attribution, event
+  idempotency and rejected UPDATE/DELETE. It refuses all databases except
+  `localhost:5433/asi_ota_finance_test`, requires the database be empty,
+  and tears down fixtures after the transaction.
+- GitHub PR Validation now provisions a **separate database** with the name
+  `asi_ota_finance_test` inside an existing disposable PostgreSQL 17 container,
+  runs the integration suite, and drops only this dedicated database.
+  Neither existing availability tests nor live Supabase data are reused.
+- Static SQL contract tests: **12/12 PASS**, run through local Node.js on
+  2026-11-16. PostgreSQL 17, application Vitest and protected CI results are
+  **NOT YET CONFIRMED**; no deployment claim is allowed.
 
-**CLI warning (November 2026):** Supabase CLI v3 changed hosted database commands to opt-in `--remote`, and remote mutations require confirmation. Use only `supabase migration new` when preparing a file; never use `db push --remote` or `apply_migration` as part of this source-only PR.
+## Next authorization gates
+
+1. Observe successful disposable PG17 and real Vitest/typecheck CI results.
+2. Review the exact private PostgreSQL access adapter before integrating
+   the approved guard into any API handler. The schema is not exposed via Data API.
+3. Review lifecycle and audit log of finance operations plus owner session
+   revocation behavior, and resolve any pre-existing booking identifier aliases.
+4. After independent approval and PG17 verification, generate an official SQL
+   migration with a verified Supabase CLI version; **do not apply it** to
+   staging or production without explicit authorization.
