@@ -70,7 +70,7 @@ jobs:
         run: |
           set -euo pipefail
           node --test scripts/finance/ota-private-ledger-contract.test.mjs
-          npx vitest run src/lib/ota-finance/__tests__/access.test.ts src/lib/ota-finance/__tests__/private-reader.test.ts --reporter=verbose
+          npx vitest run src/lib/ota-finance/__tests__/access.test.ts src/lib/ota-finance/__tests__/private-reader.test.ts src/lib/ota-finance/__tests__/transactional-import.test.ts --reporter=verbose
 
       - name: Release governance offline regressions
         run: node --test scripts/agent-os/__tests__/demo-release.test.mjs
