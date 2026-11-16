@@ -187,3 +187,44 @@ including the 2026 changes to automatic Data API table exposure.
   before exposing private data. Append/write operations remain disabled.
 - The 2026-11-16 current-head CI and release-governance status must be checked
   independently; no merge, migration apply, or staging deployment is authorized.
+
+## V1.4 atomic operator-import/audit proposal (still NOT applied)
+
+- `src/lib/ota-finance/transactional-import.ts`: a **server-only, injected**
+  PostgreSQL transaction processor. It does not construct a database pool,
+  read a connection string or expose a route. It accepts bounded normalized
+  CSV-derived statement/event input and stores only unverified operator claims.
+- After secure iron-session authorization, every booking must resolve uniquely
+  to the same canonical account/property. Inside the same PostgreSQL transaction
+  it rechecks ownership with a row lock and every booking mapping, then
+  inserts **one statement, up to 50 cash events, and one audit entry**.
+  All statements are fixed/parameterized; currency, dates, integer minor units,
+  SHA-256 source digest and external event IDs are strictly validated.
+- `supabase/migrations/20261116153907_ota_finance_transaction_audit_v1.sql`
+  was generated locally using Supabase CLI `migration new`. It introduces
+  the fifth private family, `ota_finance_private.operation_audit`, linking
+  actor `public.users`, statement, tenant, canonical property, payload SHA,
+  count, unique operation ID and `COMMITTED_UNVERIFIED` status. RLS is on;
+  only `service_role` SELECT/INSERT, no UPDATE/DELETE or direct client grants.
+  The migration is a **proposal** and was never applied to connected Supabase.
+- Any write or audit failure before COMMIT invokes ROLLBACK and propagates
+  failure. If COMMIT itself loses its result, the processor explicitly returns
+  `FINANCE_IMPORT_COMMIT_OUTCOME_UNKNOWN_NO_AUTOREPLAY`; no automatic
+  duplicate transaction is attempted.
+- `src/lib/ota-finance/__tests__/transactional-import.test.ts`: unit tests
+  for all-or-none operations, denial before privileged DB connection,
+  canonical booking/owner scope, invalid dates/money, duplicate events,
+  rollback and unknown COMMIT handling.
+- The disposable PG17 integration test now checks the fifth private RLS
+  table, FK constraints, unique audit IDs, invalid actors, prevention of
+  forged bank clearance and actual rollback of statement+event data when
+  its audit insert is rejected.
+- **Limits:** the new table captures **committed successful import audit**,
+  not a tamper-proof external audit or guaranteed permanent recording of all
+  rejected requests. A separate trusted denial-event logger and session
+  revocation design are required before enabling public endpoints. The
+  transaction processor is not wired to staging, routes, Supabase production,
+  OTA or a bank. No claims of verified bank settlement are authorized.
+- Modifying this PR changes its head SHA, so the previous exact-SHA owner
+  attestation must not be represented as approving the new head. Protected
+  governance and CI must be re-evaluated before any merge/release.
