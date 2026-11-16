@@ -66,6 +66,12 @@ jobs:
       - name: Install deps
         run: npm ci
 
+      - name: OTA finance static contracts and server-only access denial regressions
+        run: |
+          set -euo pipefail
+          node --test scripts/finance/ota-private-ledger-contract.test.mjs
+          npx vitest run src/lib/ota-finance/__tests__/access.test.ts --reporter=verbose
+
       - name: Release governance offline regressions
         run: node --test scripts/agent-os/__tests__/demo-release.test.mjs
 
@@ -561,12 +567,49 @@ jobs:
           })();
           NODE
 
+      - name: Provision dedicated disposable OTA finance PG17 database
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const { Client } = require('pg');
+          (async () => {
+            const c = new Client({connectionString:'postgresql://postgres:postgres@localhost:5433/asi_availability_test'});
+            await c.connect();
+            try {
+              const v = await c.query("select current_setting('server_version_num')::integer n, current_database() db");
+              if (Math.floor(v.rows[0].n / 10000) !== 17 || v.rows[0].db !== 'asi_availability_test')
+                throw Error('FINANCE_TEST_POSTGRES17_IDENTITY_MISMATCH');
+              await c.query('CREATE DATABASE asi_ota_finance_test');
+              console.log('ota_finance_disposable_pg17_created');
+            } finally { await c.end(); }
+          })().catch(e=>{ console.error(e); process.exitCode=1; });
+          NODE
+
       - name: OTA private finance schema PostgreSQL 17 isolation and privileges
         env:
-          ASI_DISPOSABLE_POSTGRES_URL: postgresql://postgres:postgres@localhost:5433/asi_availability_test
+          ASI_DISPOSABLE_POSTGRES_URL: postgresql://postgres:postgres@localhost:5433/asi_ota_finance_test
         run: |
           set -euo pipefail
           node --test scripts/finance/ota-private-ledger.pg.integration.test.mjs
+
+      - name: Destroy dedicated disposable OTA finance PG17 database
+        if: always()
+        run: |
+          node - <<'NODE'
+          const { Client } = require('pg');
+          (async () => {
+            const c = new Client({connectionString:'postgresql://postgres:postgres@localhost:5433/asi_availability_test'});
+            await c.connect();
+            try {
+              const v = await c.query("select current_setting('server_version_num')::integer n, current_database() db");
+              if (Math.floor(v.rows[0].n / 10000) !== 17 || v.rows[0].db !== 'asi_availability_test')
+                throw Error('FINANCE_TEST_CLEANUP_IDENTITY_MISMATCH');
+              await c.query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='asi_ota_finance_test' AND pid <> pg_backend_pid()");
+              await c.query('DROP DATABASE IF EXISTS asi_ota_finance_test');
+              console.log('ota_finance_disposable_pg17_destroyed');
+            } finally { await c.end(); }
+          })().catch(e=>{ console.error(e); process.exitCode=1; });
+          NODE
 
       - name: Wave 0 guest-memory tenancy PostgreSQL migration integration
         id: wave0_guest_memory_pg
