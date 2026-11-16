@@ -43,12 +43,11 @@ test('OTA private ledger SQL on disposable PostgreSQL 17 only', { timeout: 65000
     for(const role of ['anon','authenticated','service_role']){
       await query('CREATE ROLE '+role+' NOLOGIN'+(role==='service_role'?' BYPASSRLS':''));
     }
-    await query('CREATE SCHEMA auth');
-    await query('CREATE TABLE auth.users(id uuid primary key)');
+    await query('CREATE TABLE public.users(id uuid primary key)');
     await query('CREATE TABLE public.accounts(id uuid primary key)');
     await query('CREATE TABLE public.properties(id uuid primary key,account_id uuid not null references public.accounts(id))');
     await query('INSERT INTO public.accounts(id) VALUES ($1),($2)',[A,B]);
-    await query('INSERT INTO auth.users(id) VALUES ($1)',[U]);
+    await query('INSERT INTO public.users(id) VALUES ($1)',[U]);
     await query('INSERT INTO public.properties(id,account_id) VALUES ($1,$2),($3,$4)',
       ['11111111-1111-4111-8111-111111111111',A,'22222222-2222-4222-8222-222222222222',B]);
     await query('COMMIT');
@@ -107,7 +106,7 @@ test('OTA private ledger SQL on disposable PostgreSQL 17 only', { timeout: 65000
     try { await query('ROLLBACK'); } catch {}
     if(setup){
       await query('DROP SCHEMA IF EXISTS ota_finance_private CASCADE');
-      await query('DROP SCHEMA IF EXISTS auth CASCADE');
+      await query('DROP TABLE IF EXISTS public.users');
       await query('DROP TABLE IF EXISTS public.properties');
       await query('DROP TABLE IF EXISTS public.accounts');
       for(const role of ['service_role','authenticated','anon']){
