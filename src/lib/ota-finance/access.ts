@@ -41,7 +41,7 @@ export async function requireOtaFinanceScope(
   // The client may propose an account/property, but cannot grant itself scope.
   // Never resolve "first account", use a legacy pseudo-account, or coerce an
   // arbitrary booking property string into a canonical UUID.
-  if (!UUID.test(request.accountId) || !UUID.test(request.propertyId))
+  if (!request || typeof request !== 'object' || !UUID.test(request.accountId) || !UUID.test(request.propertyId))
     reject('FINANCE_INVALID_CANONICAL_SCOPE', 400);
   if (!['read', 'import', 'review', 'fee_rule'].includes(request.action))
     reject('FINANCE_INVALID_ACTION', 400);
@@ -65,12 +65,13 @@ export async function requireOtaFinanceScope(
 
   const property = await supabase
     .from('properties')
-    .select('id')
+    .select('id,account_id')
     .eq('id', request.propertyId)
     .eq('account_id', request.accountId)
     .maybeSingle();
   if (property.error) reject('FINANCE_PROPERTY_LOOKUP_UNAVAILABLE', 503);
-  if (!property.data) reject('FINANCE_PROPERTY_FORBIDDEN', 403);
+  if (!property.data || property.data.id !== request.propertyId || property.data.account_id !== request.accountId)
+    reject('FINANCE_PROPERTY_FORBIDDEN', 403);
 
   if (request.bookingId !== undefined) {
     // Legacy booking_ops_records uses text account/property identifiers. Only
@@ -78,13 +79,17 @@ export async function requireOtaFinanceScope(
     // table and reconciliation procedure are approved.
     const booking = await supabase
       .from('booking_ops_records')
-      .select('id')
+      .select('id,account_id,property_id,booking_id')
       .eq('account_id', request.accountId)
       .eq('property_id', request.propertyId)
       .eq('booking_id', request.bookingId)
       .limit(2);
     if (booking.error) reject('FINANCE_BOOKING_LOOKUP_UNAVAILABLE', 503);
-    if (booking.data?.length !== 1) reject('FINANCE_BOOKING_SCOPE_AMBIGUOUS_OR_MISSING', 403);
+    if (booking.data?.length !== 1 ||
+        booking.data[0].account_id !== request.accountId ||
+        booking.data[0].property_id !== request.propertyId ||
+        booking.data[0].booking_id !== request.bookingId)
+      reject('FINANCE_BOOKING_SCOPE_AMBIGUOUS_OR_MISSING', 403);
   }
 
   // Minimum audit trail. The later persistent audit adapter must record
