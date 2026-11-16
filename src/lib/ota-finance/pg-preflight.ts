@@ -119,6 +119,7 @@ export async function assessFinanceStagingReadiness(
 ): Promise<'FINANCE_PG_STAGING_READINESS_ONLY'> {
   if (target.kind !== 'staging_readiness_only')
     throw new FinancePgPreflightError('FINANCE_PG_STAGING_MODE_REQUIRED');
+  validateTarget(target); // Reject a NOLOGIN/fixture role before opening staging SQL.
   const client = await pool.connect();
   try {
     await verifyFinancePgSession(client, target);
