@@ -101,6 +101,49 @@ test('OTA private ledger SQL on disposable PostgreSQL 17 only', { timeout: 65000
     await expectSqlError(base,[statementId,B,'evt-other-tenant']);
     await expectSqlError(base,[statementId,A,'evt-a']);
     await query('COMMIT');
+    // The property must belong to the exact account, even without a statement parent.
+    const feeInsert=`INSERT INTO ota_finance_private.fee_rule_versions
+      (account_id,property_id,provider,currency,contract_key,version,effective_from,
+       effective_through,commission_bps,fixed_minor,fee_base,collection_method,
+       charge_on_cancellation,source_digest_sha256)
+      VALUES ($1,$2,'ota-a','RUB','c-1',$3,$4,$5,1000,0,'gross',
+              'withheld_from_payout',false,$6)`;
+    await query(feeInsert,[A,'11111111-1111-4111-8111-111111111111',1,'2026-01-01','2026-12-31',digest]);
+    await query('BEGIN');
+    const expectFinanceRejection=async(statement,params=[])=>{
+      await query('SAVEPOINT finance_negative_constraint');
+      try{await assert.rejects(query(statement,params));}
+      finally{
+        await query('ROLLBACK TO SAVEPOINT finance_negative_constraint');
+        await query('RELEASE SAVEPOINT finance_negative_constraint');
+      }
+    };
+    await expectFinanceRejection(feeInsert,
+      [B,'11111111-1111-4111-8111-111111111111',2,'2027-01-01',null,digest]);
+    await expectFinanceRejection(feeInsert,
+      [A,'11111111-1111-4111-8111-111111111111',2,'2026-11-01','2027-03-01',digest]);
+    // Imported CSV can never claim verified bank settlement.
+    await expectFinanceRejection(`INSERT INTO ota_finance_private.cash_events
+      (statement_import_id,account_id,property_id,provider,currency,booking_id,
+       external_event_id,kind,amount_minor,claimed_settled_on,source_status)
+      VALUES($1,$2,$3,'ota-a','RUB','booking-a','forged-clearance',
+             'payout_received',10,'2026-11-16','bank_settled')`,
+      [statementId,A,'11111111-1111-4111-8111-111111111111']);
+    await expectFinanceRejection(`INSERT INTO ota_finance_private.statement_reviews
+      (statement_import_id,account_id,property_id,provider,currency,
+       actor_user_id,outcome,evidence_sha256)
+      VALUES($1,$2,$3,'ota-a','RUB',$4,'accepted_for_review',$5)`,
+      [statementId,A,'11111111-1111-4111-8111-111111111111',
+       'dddddddd-dddd-4ddd-8ddd-dddddddddddd',digest]);
+    await query('COMMIT');
+    // A later non-overlapping revision is valid.
+    await query(feeInsert,
+      [A,'11111111-1111-4111-8111-111111111111',2,'2027-01-01',null,digest]);
+    await query(`INSERT INTO ota_finance_private.statement_reviews
+      (statement_import_id,account_id,property_id,provider,currency,
+       actor_user_id,outcome,evidence_sha256)
+      VALUES($1,$2,$3,'ota-a','RUB',$4,'accepted_for_review',$5)`,
+      [statementId,A,'11111111-1111-4111-8111-111111111111',U,digest]);
     await query('BEGIN');
     await denied('service_role',"UPDATE ota_finance_private.cash_events SET amount_minor=1 WHERE external_event_id='evt-a'");
     await denied('service_role',"DELETE FROM ota_finance_private.cash_events WHERE external_event_id='evt-a'");
@@ -108,7 +151,7 @@ test('OTA private ledger SQL on disposable PostgreSQL 17 only', { timeout: 65000
     const unverified=await query('SELECT source_status,amount_minor FROM ota_finance_private.cash_events');
     assert.equal(unverified.rows[0].source_status,'UNVERIFIED_OPERATOR_IMPORT');
     assert.equal(Number(unverified.rows[0].amount_minor),84800);
-    t.diagnostic('OTA_PRIVATE_PG17_PROOF: real DDL, 4 RLS tables, isolated roles, composite tenant FK, duplicate events, no UPDATE/DELETE PASS');
+    t.diagnostic('OTA_PRIVATE_PG17_PROOF: real DDL, 4 RLS tables, isolated roles, composite tenant FK, date-exclusion, fake bank status, review FK, duplicate events, no UPDATE/DELETE PASS');
   } finally {
     try { await query('ROLLBACK'); } catch {}
     if(setup){
