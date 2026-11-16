@@ -8,7 +8,7 @@ const urlText = process.env.ASI_DISPOSABLE_POSTGRES_URL;
 if (!urlText) throw new Error('DISPOSABLE_POSTGRES_MISSING_NO_SKIP');
 const url = new URL(urlText);
 if (!['localhost', '127.0.0.1'].includes(url.hostname)
-  || url.port !== '5433' || url.pathname !== '/asi_availability_test') {
+  || url.port !== '5433' || url.pathname !== '/asi_ota_finance_test') {
   throw new Error('DISPOSABLE_POSTGRES_IDENTITY_MISMATCH');
 }
 const sql = readFileSync(
@@ -37,8 +37,15 @@ test('OTA private ledger SQL on disposable PostgreSQL 17 only', { timeout: 65000
   };
   try {
     const server=await query('select current_setting(\'server_version_num\')::integer n,current_database() db');
-    assert.equal(server.rows[0].db,'asi_availability_test');
+    assert.equal(server.rows[0].db,'asi_ota_finance_test');
     assert.equal(Math.floor(server.rows[0].n/10000),17);
+    // Never overwrite another app, prior fixture, or shared test database.
+    const preflight=await query(`SELECT to_regclass('public.accounts') AS accounts,
+      to_regclass('public.properties') AS properties,
+      to_regclass('public.users') AS users,
+      to_regclass('ota_finance_private.fee_rule_versions') AS finance`);
+    assert.ok(Object.values(preflight.rows[0]).every(value=>value===null),
+      'DISPOSABLE_POSTGRES_NOT_EMPTY');
     await query('BEGIN');
     for(const role of ['anon','authenticated','service_role']){
       await query('CREATE ROLE '+role+' NOLOGIN'+(role==='service_role'?' BYPASSRLS':''));
