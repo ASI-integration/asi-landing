@@ -9,7 +9,7 @@ vi.mock('../access', () => {
   return { OtaFinanceAccessError, requireOtaFinanceScope: mock.authorize };
 });
 
-import { requireAuditedOtaFinanceScope } from '../denial-audit';
+import { requireAuditedOtaFinanceScope, type DenialAuditSqlWriter } from '../denial-audit';
 import { OtaFinanceAccessError } from '../access';
 
 const REQUEST = {
@@ -24,7 +24,7 @@ function sink(options?: { fail?: boolean; missingReceipt?: boolean }) {
     if (options?.fail) throw new Error('database-unavailable');
     return { rows: options?.missingReceipt ? [] : [{ id: 'audit-row' }] };
   });
-  return { query };
+  return { query, writer: { query } as unknown as DenialAuditSqlWriter };
 }
 
 beforeEach(() => vi.clearAllMocks());
@@ -33,14 +33,14 @@ describe('private fail-closed denial audit', () => {
   it('authorizes a valid session without writing a denial', async () => {
     const audit = sink();
     mock.authorize.mockResolvedValue({ accountId: REQUEST.accountId, propertyId: REQUEST.propertyId, role: 'owner' });
-    await expect(requireAuditedOtaFinanceScope(audit, REQUEST)).resolves.toMatchObject({ role: 'owner' });
+    await expect(requireAuditedOtaFinanceScope(audit.writer, REQUEST)).resolves.toMatchObject({ role: 'owner' });
     expect(audit.query).not.toHaveBeenCalled();
   });
 
   it('appends one redacted denial record before rejecting the caller', async () => {
     const audit = sink();
-    mock.authorize.mockRejectedValue(new OtaFinanceAccessError('FINANCE_WRITE_REQUIRES_OWNER'));
-    await expect(requireAuditedOtaFinanceScope(audit, REQUEST))
+    mock.authorize.mockRejectedValue(new OtaFinanceAccessError('FINANCE_WRITE_REQUIRES_OWNER', 403));
+    await expect(requireAuditedOtaFinanceScope(audit.writer, REQUEST))
       .rejects.toThrow('FINANCE_WRITE_REQUIRES_OWNER');
     expect(audit.query).toHaveBeenCalledTimes(1);
     const [sql, params] = audit.query.mock.calls[0];
@@ -56,23 +56,23 @@ describe('private fail-closed denial audit', () => {
 
   it('denies access when audit database is unavailable, never converts denial to success', async () => {
     const audit = sink({ fail: true });
-    mock.authorize.mockRejectedValue(new OtaFinanceAccessError('FINANCE_ACCOUNT_FORBIDDEN'));
-    await expect(requireAuditedOtaFinanceScope(audit, REQUEST))
+    mock.authorize.mockRejectedValue(new OtaFinanceAccessError('FINANCE_ACCOUNT_FORBIDDEN', 403));
+    await expect(requireAuditedOtaFinanceScope(audit.writer, REQUEST))
       .rejects.toThrow('FINANCE_DENIAL_AUDIT_UNAVAILABLE');
     expect(audit.query).toHaveBeenCalledTimes(1);
   });
 
   it('rejects missing audit receipt, rather than claiming a successful denial log', async () => {
     const audit = sink({ missingReceipt: true });
-    mock.authorize.mockRejectedValue(new OtaFinanceAccessError('FINANCE_LOGIN_REQUIRED'));
-    await expect(requireAuditedOtaFinanceScope(audit, REQUEST))
+    mock.authorize.mockRejectedValue(new OtaFinanceAccessError('FINANCE_LOGIN_REQUIRED', 401));
+    await expect(requireAuditedOtaFinanceScope(audit.writer, REQUEST))
       .rejects.toThrow('FINANCE_DENIAL_AUDIT_UNAVAILABLE');
   });
 
   it('stores an invalid action as a controlled enum, without persisting raw fields', async () => {
     const audit = sink();
-    mock.authorize.mockRejectedValue(new OtaFinanceAccessError('FINANCE_INVALID_ACTION'));
-    await expect(requireAuditedOtaFinanceScope(audit, {
+    mock.authorize.mockRejectedValue(new OtaFinanceAccessError('FINANCE_INVALID_ACTION', 400));
+    await expect(requireAuditedOtaFinanceScope(audit.writer, {
       ...REQUEST, action: 'malicious-private-action' as 'read',
     })).rejects.toThrow('FINANCE_INVALID_ACTION');
     expect(audit.query.mock.calls[0][1][1]).toBe('invalid_action');
@@ -82,7 +82,7 @@ describe('private fail-closed denial audit', () => {
   it('does not rewrite arbitrary programmer/runtime exceptions as security denials', async () => {
     const audit = sink();
     mock.authorize.mockRejectedValue(new Error('SERVICE_UNAVAILABLE'));
-    await expect(requireAuditedOtaFinanceScope(audit, REQUEST))
+    await expect(requireAuditedOtaFinanceScope(audit.writer, REQUEST))
       .rejects.toThrow('SERVICE_UNAVAILABLE');
     expect(audit.query).not.toHaveBeenCalled();
   });
