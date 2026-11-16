@@ -49,7 +49,16 @@ class OnecomReleaseIdentityTests(unittest.TestCase):
     def test_dirty_tracked_source_refuses_to_stamp_release(self):
         (self.repo / "app.js").write_text("mutated source", "utf8")
         with self.assertRaisesRegex(
-            ReleaseIdentityBlocked, "TRACKED_SOURCE_CHANGES"
+            ReleaseIdentityBlocked, "CHECKOUT_UNREVIEWED_FILES"
+        ):
+            propose_release_meta(self.repo, self.sha)
+
+    def test_untracked_source_refuses_to_stamp_reviewed_sha(self):
+        (self.repo / "unreviewed_handler.py").write_text(
+            "print('unsafe')\\n", "utf8"
+        )
+        with self.assertRaisesRegex(
+            ReleaseIdentityBlocked, "CHECKOUT_UNREVIEWED_FILES"
         ):
             propose_release_meta(self.repo, self.sha)
 
