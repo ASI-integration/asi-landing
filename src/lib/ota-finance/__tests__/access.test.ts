@@ -68,6 +68,14 @@ describe('OTA finance boundary (no finance API/database writes)', () => {
     expect(mock.from).toHaveBeenCalledTimes(1);
   });
 
+  it('allows manager reads but denies manager imports and reviews', async () => {
+    const membership=table({data:{role:'manager'},error:null});
+    mock.from.mockReturnValue(membership);
+    await expect(requireOtaFinanceScope({accountId:A,propertyId:PA,action:'import'}))
+      .rejects.toMatchObject({code:'FINANCE_WRITE_REQUIRES_OWNER',status:403});
+    expect(mock.from).toHaveBeenCalledTimes(1);
+  });
+
   it('refuses a property belonging to another account', async () => {
     const membership=table({ data:{role:'owner'},error:null });
     const property=table({ data:null,error:null });
