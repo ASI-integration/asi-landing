@@ -88,3 +88,14 @@ database owners can still alter data, so this is not tamper-proof archival.
 
 References: Supabase *Row Level Security* and *Securing Your API* guides,
 including the 2026 changes to automatic Data API table exposure.
+
+## V1.1 server-side gate and disposable integration evidence (candidate)
+
+- `src/lib/ota-finance/private-scope.ts` is an **unwired backend helper**. It calls `auth.getUser(accessToken)` and then, through an injected trusted server-only client, looks up `public.account_members` and `public.properties`. Every match requires a canonical UUID account ID and property ID. It ignores caller-provided user IDs, and fails closed on membership, role, property or Auth errors.
+- `owner` and `admin` can request an **append authorization decision**; `manager` can request read authorization only. This is a deliberately conservative preliminary allowlist, not a claim that the real system already provisions these roles. Verify supported roles in the pilot.
+- This module does not directly expose a financial route, instantiate an administrative client, write to the database or integrate with a bank. Integrating it into authenticated server endpoints, audit logging and a safe financial write transaction remains required.
+- `src/lib/ota-finance/__tests__/private-scope.test.ts`: ten negative/positive scope tests. They use synthetic identities and a fake Supabase client, so they **cannot prove real JWT validation** or actual browser/server separation.
+- `scripts/finance/ota-private-ledger.pg.integration.test.mjs`: a PostgreSQL 17-only integration check on the **existing temporary GitHub Actions database port 5433**, with a fail-closed database-name/host guard. It creates synthetic roles, account/property fixtures and proves RLS, privileges, composite FK, duplicate-event rejection and append-only service permissions. Its test state is removed on success; the service itself is disposable.
+- The PR workflow is configured to run this real PostgreSQL test independently of static tests. A passing test is **not** evidence of live Supabase migration or bank settlement.
+
+**CLI warning (November 2026):** Supabase CLI v3 changed hosted database commands to opt-in `--remote`, and remote mutations require confirmation. Use only `supabase migration new` when preparing a file; never use `db push --remote` or `apply_migration` as part of this source-only PR.

@@ -561,6 +561,13 @@ jobs:
           })();
           NODE
 
+      - name: OTA private finance schema PostgreSQL 17 isolation and privileges
+        env:
+          ASI_DISPOSABLE_POSTGRES_URL: postgresql://postgres:postgres@localhost:5433/asi_availability_test
+        run: |
+          set -euo pipefail
+          node --test scripts/finance/ota-private-ledger.pg.integration.test.mjs
+
       - name: Wave 0 guest-memory tenancy PostgreSQL migration integration
         id: wave0_guest_memory_pg
         run: |
