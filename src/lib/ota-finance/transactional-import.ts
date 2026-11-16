@@ -83,7 +83,7 @@ function validate(input: UnverifiedStatementInput): void {
         || !eventKinds.has(row.kind)
         || typeof row.amountMinor !== 'string'
         || !decimal.test(row.amountMinor)
-        || BigInt(row.amountMinor) > 1_000_000_000_000n
+        || BigInt(row.amountMinor) > BigInt('1000000000000')
         || !validDate(row.claimedSettledOn)
         || seen.has(row.externalEventId)) {
       throw new FinanceImportError('FINANCE_IMPORT_INVALID_OR_DUPLICATE_EVENT');
