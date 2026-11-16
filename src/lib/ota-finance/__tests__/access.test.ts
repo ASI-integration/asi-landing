@@ -88,7 +88,7 @@ describe('OTA finance boundary (no finance API/database writes)', () => {
 
   it('refuses missing or ambiguous booking mappings', async () => {
     const membership=table({ data:{role:'manager'},error:null });
-    const property=table({ data:{id:PA},error:null });
+    const property=table({ data:{id:PA,account_id:A},error:null });
     const booking=table({ data:[{id:'x'},{id:'y'}],error:null });
     mock.from.mockImplementation((name:string)=>({
       account_members:membership, properties:property, booking_ops_records:booking,
@@ -100,9 +100,34 @@ describe('OTA finance boundary (no finance API/database writes)', () => {
     expect(booking.eq).toHaveBeenCalledWith('booking_id', 'B-123');
   });
 
+  it('rejects a mismatched property returned despite scoped filters', async () => {
+    const membership=table({data:{role:'owner'},error:null});
+    const property=table({data:{id:PA,account_id:B},error:null});
+    mock.from.mockImplementation((name:string)=>name==='account_members'?membership:property);
+    await expect(requireOtaFinanceScope({accountId:A,propertyId:PA,action:'read'}))
+      .rejects.toMatchObject({code:'FINANCE_PROPERTY_FORBIDDEN',status:403});
+  });
+
+  it('authorizes a booking only with the exact account/property/booking values', async () => {
+    const membership=table({data:{role:'owner'},error:null});
+    const property=table({data:{id:PA,account_id:A},error:null});
+    const booking=table({data:[{
+      id:'c1111111-1111-4111-8111-111111111111',
+      account_id:A,property_id:PA,booking_id:'B-123',
+    }],error:null});
+    mock.from.mockImplementation((name:string)=>({
+      account_members:membership, properties:property, booking_ops_records:booking,
+    } as Record<string, ReturnType<typeof table>>)[name]);
+    const spy=vi.spyOn(console,'info').mockImplementation(()=>{});
+    try {
+      await expect(requireOtaFinanceScope({accountId:A,propertyId:PA,action:'read',bookingId:'B-123'}))
+        .resolves.toMatchObject({accountId:A,propertyId:PA,bookingId:'B-123'});
+    } finally {spy.mockRestore();}
+  });
+
   it('authorizes only exact matching tenant and property', async () => {
     const membership=table({ data:{role:'owner'},error:null });
-    const property=table({ data:{id:PA},error:null });
+    const property=table({ data:{id:PA,account_id:A},error:null });
     mock.from.mockImplementation((name:string)=>name==='account_members'?membership:property);
     const spy=vi.spyOn(console,'info').mockImplementation(()=>{});
     try {
