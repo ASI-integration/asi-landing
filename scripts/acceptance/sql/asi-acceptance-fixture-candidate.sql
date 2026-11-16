@@ -20,7 +20,7 @@ BEGIN
   IF v.booking_id IS NOT NULL OR v.ota_source IS DISTINCT FROM 'manual'
      OR v.ops_status IS DISTINCT FROM 'created'
      OR v.guest_name IS NULL
-     OR v.guest_name !~* '(test|synthetic|????????|demo|????????|asi)'
+     OR v.guest_name !~* '^[[:space:]]*(asi[[:space:]-]*(synthetic|test)|test|synthetic|????????|????????|demo)'
      OR nullif(trim(COALESCE(v.guest_email,'')),'') IS NOT NULL
      OR nullif(trim(COALESCE(v.guest_phone,'')),'') IS NOT NULL
      OR nullif(trim(COALESCE(v.guest_telegram,'')),'') IS NOT NULL
