@@ -27,6 +27,8 @@ function fixture(overrides: {
   updateGranted?: boolean;
   lostUsage?: boolean;
   wrongRole?: boolean;
+  stagedRole?: boolean;
+  roleCanLogin?: boolean;
 } = {}) {
   const release = vi.fn();
   const sql: string[] = [];
@@ -35,8 +37,9 @@ function fixture(overrides: {
     if (statement.includes('current_database()::text')) {
       return { rows: [{
         database: overrides.wrongDb ? 'wrong_project' : 'asi_ota_finance_test',
-        role: overrides.wrongRole ? 'postgres' : 'service_role',
+        role: overrides.wrongRole ? 'postgres' : overrides.stagedRole ? 'asi_finance_runtime' : 'service_role',
         version: overrides.version ?? 170002,
+        role_can_login: overrides.roleCanLogin ?? false,
         schema_usage: !overrides.lostUsage,
       }] };
     }
@@ -91,9 +94,9 @@ describe('finance PostgreSQL schema and identity preflight', () => {
   });
 
   it('staging assessment always releases the connection without any DML', async () => {
-    const db = fixture();
+    const db = fixture({ stagedRole: true, roleCanLogin: true });
     const result = await assessFinanceStagingReadiness(db.pool, {
-      ...target, kind: 'staging_readiness_only',
+      ...target, kind: 'staging_readiness_only', role: 'asi_finance_runtime',
     });
     expect(result).toBe('FINANCE_PG_STAGING_READINESS_ONLY');
     expect(db.release).toHaveBeenCalledOnce();
@@ -104,9 +107,33 @@ describe('finance PostgreSQL schema and identity preflight', () => {
   it('staging connection cannot be used as a finance write pool', () => {
     const db = fixture();
     expect(() => guardedDisposableFinancePool(db.pool, {
-      ...target, kind: 'staging_readiness_only',
+      ...target, kind: 'staging_readiness_only', role: 'asi_finance_runtime',
     })).toThrow('FINANCE_PG_WRITES_DISPOSABLE_ONLY');
     expect(db.pool.connect).not.toHaveBeenCalled();
+  });
+
+  it('refuses the Supabase NOLOGIN service_role for a real staging probe before connecting', async () => {
+    const db = fixture();
+    await expect(assessFinanceStagingReadiness(db.pool, {
+      ...target, kind: 'staging_readiness_only',
+    })).rejects.toThrow('FINANCE_PG_STAGING_DEDICATED_ROLE_REQUIRED');
+    expect(db.pool.connect).not.toHaveBeenCalled();
+  });
+
+  it('rejects a dedicated staging role that cannot log in, and releases client', async () => {
+    const db = fixture({ stagedRole: true, roleCanLogin: false });
+    await expect(assessFinanceStagingReadiness(db.pool, {
+      ...target, kind: 'staging_readiness_only', role: 'asi_finance_runtime',
+    })).rejects.toThrow('FINANCE_PG_IDENTITY_OR_VERSION_MISMATCH');
+    expect(db.release).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a mismatching actual staging role even if the configured role is valid', async () => {
+    const db = fixture({ roleCanLogin: true });
+    await expect(assessFinanceStagingReadiness(db.pool, {
+      ...target, kind: 'staging_readiness_only', role: 'asi_finance_runtime',
+    })).rejects.toThrow('FINANCE_PG_IDENTITY_OR_VERSION_MISMATCH');
+    expect(db.release).toHaveBeenCalledOnce();
   });
 
   it('rejects invalid target identifiers before connecting to DB', () => {
