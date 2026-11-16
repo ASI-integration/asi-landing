@@ -19,6 +19,10 @@ const auditSql = readFileSync(
   new URL('../../supabase/migrations/20261116153907_ota_finance_transaction_audit_v1.sql', import.meta.url),
   'utf8',
 );
+const denialSql = readFileSync(
+  new URL('../../supabase/migrations/20261116160025_ota_finance_denial_audit_v1.sql', import.meta.url),
+  'utf8',
+);
 const A='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const B='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const U='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -71,10 +75,11 @@ test('OTA private ledger SQL on disposable PostgreSQL 17 only', { timeout: 65000
     setup=true;
     await query(sql);
     await query(auditSql);
+    await query(denialSql);
     const schema=await query(
       "SELECT tablename,rowsecurity FROM pg_tables WHERE schemaname='ota_finance_private' ORDER BY tablename");
     assert.deepEqual(schema.rows.map(x=>x.tablename),
-      ['cash_events','fee_rule_versions','operation_audit','statement_imports','statement_reviews']);
+      ['access_denials','cash_events','fee_rule_versions','operation_audit','statement_imports','statement_reviews']);
     assert.ok(schema.rows.every(x=>x.rowsecurity===true));
     assert.equal((await query("SELECT has_schema_privilege('anon','ota_finance_private','USAGE') allowed")).rows[0].allowed,false);
     assert.equal((await query("SELECT has_schema_privilege('authenticated','ota_finance_private','USAGE') allowed")).rows[0].allowed,false);
@@ -82,6 +87,8 @@ test('OTA private ledger SQL on disposable PostgreSQL 17 only', { timeout: 65000
     assert.equal((await query("SELECT has_table_privilege('service_role','ota_finance_private.cash_events','INSERT') allowed")).rows[0].allowed,true);
     assert.equal((await query("SELECT has_table_privilege('service_role','ota_finance_private.operation_audit','INSERT') allowed")).rows[0].allowed,true);
     assert.equal((await query("SELECT has_table_privilege('service_role','ota_finance_private.operation_audit','UPDATE') allowed")).rows[0].allowed,false);
+    assert.equal((await query("SELECT has_table_privilege('service_role','ota_finance_private.access_denials','INSERT') allowed")).rows[0].allowed,true);
+    assert.equal((await query("SELECT has_table_privilege('service_role','ota_finance_private.access_denials','UPDATE') allowed")).rows[0].allowed,false);
     await query('BEGIN');
     await denied('anon','select * from ota_finance_private.cash_events');
     await denied('authenticated','select * from ota_finance_private.cash_events');
@@ -205,10 +212,24 @@ test('OTA private ledger SQL on disposable PostgreSQL 17 only', { timeout: 65000
     await denied('anon','SELECT * FROM ota_finance_private.operation_audit');
     await query('COMMIT');
 
+    // Even before a valid tenant identity exists, a denial can be appended
+    // without storing raw booking, guest, account, or property identifiers.
+    const denialReq='f6666666-6666-4666-8666-666666666666';
+    const rejection=(await query(`insert into ota_finance_private.access_denials
+      (request_id, action, reason_code, scope_sha256)
+      values($1,'import','FINANCE_WRITE_REQUIRES_OWNER',$2)
+      returning outcome`, [denialReq,digest])).rows[0];
+    assert.equal(rejection.outcome,'DENIED');
+    await query('BEGIN');
+    await denied('anon','select * from ota_finance_private.access_denials');
+    await denied('authenticated','select * from ota_finance_private.access_denials');
+    await denied('service_role',"update ota_finance_private.access_denials set outcome='ALLOWED'");
+    await query('COMMIT');
+    assert.equal((await query('select count(*)::integer n from ota_finance_private.access_denials')).rows[0].n,1);
     const unverified=await query('SELECT source_status,amount_minor FROM ota_finance_private.cash_events');
     assert.equal(unverified.rows[0].source_status,'UNVERIFIED_OPERATOR_IMPORT');
     assert.equal(Number(unverified.rows[0].amount_minor),84800);
-    t.diagnostic('OTA_PRIVATE_PG17_PROOF: real DDL, 5 RLS tables, audit FK, atomic rollback, unique operations, isolated roles, composite tenant FK, date-exclusion, fake bank status, review FK, duplicate events, no UPDATE/DELETE PASS');
+    t.diagnostic('OTA_PRIVATE_PG17_PROOF: real DDL, 6 RLS tables, audit FK, atomic rollback, unique operations, isolated roles, composite tenant FK, date-exclusion, fake bank status, review FK, duplicate events, no UPDATE/DELETE PASS');
   } finally {
     try { await query('ROLLBACK'); } catch {}
     if(setup){
