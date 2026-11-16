@@ -197,7 +197,7 @@ def switch(path,name):
     if temp.exists() or temp.is_symlink():raise Blocked("TEMP_LINK_EXISTS")
     temp.symlink_to(path)
     os.replace(temp,CURRENT)
-    cmd("systemctl","restart",SERVICE,timeout=90)
+    # Caller records that the link switched BEFORE attempting service restart.
 
 def promote():
     if os.geteuid()!=0 or not sys.stdin.isatty():raise Blocked("DIRECT_OWNER_INTERACTIVE_ROOT_TTY_REQUIRED")
@@ -218,11 +218,21 @@ def promote():
             if json.loads((TARGET/"release-meta.json").read_text())!={"gitSha":SHA}:
                 raise Blocked("EXTRACTED_METADATA_DRIFT")
             cmd("chown","-R","asi-strigunov-stage:asi-strigunov-stage",str(TARGET),timeout=300)
-            switch(TARGET,"new");changed=True;postcheck()
+            switch(TARGET,"new");changed=True
+            cmd("systemctl","restart",SERVICE,timeout=90)
+            postcheck()
             return {"status":"PROMOTED_STAGING_ONLY","sha":SHA,"g2_acceptance":"NOT_RUN"}
         except Exception as exc:
             if changed:
-                try:switch(OLD,"rollback")
+                try:
+                    switch(OLD,"rollback")
+                    cmd("systemctl","restart",SERVICE,timeout=90)
+                    for attempt in range(12):
+                        try:
+                            if get("/api/health")[0]==200:break
+                        except (OSError,URLError):pass
+                        time.sleep(2)
+                    else:raise Blocked("ROLLBACK_HEALTH_UNVERIFIED")
                 except Exception:raise Blocked("ROLLBACK_UNVERIFIED") from exc
                 raise Blocked("PROMOTION_FAILED_ROLLED_BACK") from exc
             raise Blocked("PROMOTION_FAILED_BEFORE_SWITCH") from exc
