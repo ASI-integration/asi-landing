@@ -126,8 +126,10 @@ including the 2026 changes to automatic Data API table exposure.
   runs the integration suite, and drops only this dedicated database.
   Neither existing availability tests nor live Supabase data are reused.
 - Static SQL contract tests: **12/12 PASS**, run through local Node.js on
-  2026-11-16. PostgreSQL 17, application Vitest and protected CI results are
-  **NOT YET CONFIRMED**; no deployment claim is allowed.
+  2026-11-16. Disposable PostgreSQL 17 succeeded in PR Validation run 43893513609;
+  app-session access Vitest, lint and TypeScript typecheck succeeded in
+  run 43893938615. Release-governance check currently blocks workflow changes
+  pending verified owner attestation. No deployment claim is allowed.
 
 ## Next authorization gates
 
@@ -139,3 +141,24 @@ including the 2026 changes to automatic Data API table exposure.
 4. After independent approval and PG17 verification, generate an official SQL
    migration with a verified Supabase CLI version; **do not apply it** to
    staging or production without explicit authorization.
+
+## Official migration file prepared (NOT applied)
+
+- Prepared with `Supabase CLI 3.1.0`: `supabase migration new ota_finance_private_ledger_v1`
+  produced the local filename
+  `supabase/migrations/20261116151659_ota_finance_private_ledger_v1.sql`.
+- The file was populated using the same PostgreSQL 17-tested DDL, omitting
+  only candidate comments and manual `BEGIN/COMMIT` so the official migration
+  runner controls the transaction. The candidate SQL and the migration have
+  identical DDL text, confirmed by **13/13 Node static tests**.
+- Real SQL DDL/RLS/FK/privilege validation passed on disposable PostgreSQL 17:
+  GitHub PR Validation run **43893513609**, job
+  `channel-manager-recovery-postgres`, including database teardown.
+- The application-session authorization tests, lint and TypeScript typecheck
+  passed in run **43893938615**. Protected release governance is separately
+  blocked on `GOVERNANCE_CHANGE_NEEDS_VERIFIED_OWNER_ATTESTATION`, which must
+  not be bypassed.
+- No `supabase db push`, `apply_migration`, migration deploy, payment
+  operation, or production/staging database write was performed.
+- The migration MUST remain in Draft until owner-approved release controls,
+  source diff review and strict target-identity verification are complete.
