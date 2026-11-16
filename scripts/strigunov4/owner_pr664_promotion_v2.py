@@ -128,6 +128,41 @@ def verify_github():
         blockers.append("TRUSTED_RELEASE_NOT_APPROVED")
     return blockers
 
+def verify_publisher_review():
+    """A privileged publisher cannot authorize its own unreviewed source."""
+    import base64
+    repo="ASI-integration/asi-landing"
+    pp=gh("pr","view","665","--repo",repo,
+          "--json","state,isDraft,reviewDecision,headRefOid,author")
+    head=pp.get("headRefOid","")
+    blockers=[]
+    if pp.get("state")!="OPEN" or pp.get("isDraft") is not False:
+        blockers.append("PR665_PUBLISHER_STILL_DRAFT")
+    if pp.get("reviewDecision")!="APPROVED":
+        blockers.append("PR665_PUBLISHER_NOT_APPROVED")
+    reviews=gh("api",f"repos/{repo}/pulls/665/reviews","--paginate")
+    author=(pp.get("author") or {}).get("login")
+    latest={}
+    for r in reviews:
+        who=(r.get("user") or {}).get("login")
+        if who:latest[who]=r
+    if not any(r.get("state")=="APPROVED" and r.get("commit_id")==head
+               and who!=author for who,r in latest.items()):
+        blockers.append("PR665_INDEPENDENT_REVIEW_MISSING")
+    path="scripts/strigunov4/owner_pr664_promotion_v2.py"
+    entry=gh("api",f"repos/{repo}/contents/{path}","-X","GET","-f",f"ref={head}")
+    reviewed=base64.b64decode(entry.get("content","")).decode("utf8").replace("\r\n","\n")
+    installed=pathlib.Path(__file__).read_text("utf8").replace("\r\n","\n")
+    if reviewed.strip()!=installed.strip():
+        blockers.append("PUBLISHER_SOURCE_NOT_APPROVED")
+    ci=gh("api",f"repos/{repo}/actions/runs","-X","GET",
+          "-f",f"head_sha={head}","-f","per_page=100")
+    if not any(x.get("name")=="PR Validation" and x.get("head_sha")==head and
+               x.get("event")=="pull_request" and x.get("conclusion")=="success"
+               for x in ci.get("workflow_runs",[])):
+        blockers.append("PR665_NATIVE_CI_NOT_PASSED")
+    return blockers
+
 def preflight():
     blockers=[];ok=[]
     for name,fn in (("ARTIFACT",verify_artifact),("ARCHIVE",verify_archive_members),
@@ -136,6 +171,8 @@ def preflight():
         except (Blocked,ValueError,OSError,KeyError) as e:blockers.append(name+"_"+(str(e) if isinstance(e,Blocked) else "CHECK_FAILED"))
     try:blockers.extend(verify_github())
     except (Blocked,ValueError,OSError):blockers.append("GITHUB_UNVERIFIED")
+    try:blockers.extend(verify_publisher_review())
+    except (Blocked,ValueError,OSError,KeyError):blockers.append("PUBLISHER_CODE_REVIEW_UNVERIFIED")
     return {"schema":"asi.pr664.owner-promotion-v2","source_sha":SHA,
         "artifact_sha256":ARTSHA,"checks_passed":ok,"blockers":sorted(set(blockers)),
         "status":"BLOCKED" if blockers else "READY_FOR_OWNER_CONFIRMATION",
