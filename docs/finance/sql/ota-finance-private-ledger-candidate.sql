@@ -5,6 +5,14 @@
 -- Do not execute on the live Supabase project at this stage.
 begin;
 
+-- btree_gist enforces conflict-free, race-safe effective-date ranges.
+create extension if not exists btree_gist;
+
+-- Composite FK guarantees a property cannot be attributed to another tenant.
+-- This additional unique index is part of the future migration review.
+create unique index if not exists properties_id_account_for_ota_finance
+  on public.properties (id, account_id);
+
 create schema if not exists ota_finance_private;
 revoke all on schema ota_finance_private from public, anon, authenticated;
 grant usage on schema ota_finance_private to service_role;
@@ -13,7 +21,7 @@ grant usage on schema ota_finance_private to service_role;
 create table ota_finance_private.fee_rule_versions (
   id uuid primary key default gen_random_uuid(),
   account_id uuid not null references public.accounts(id) on delete restrict,
-  property_id text not null check (length(property_id) between 1 and 200),
+  property_id uuid not null,
   provider text not null check (length(provider) between 1 and 100),
   currency text not null check (currency ~ '^[A-Z]{3}$'),
   contract_key text not null check (length(contract_key) between 1 and 200),
@@ -32,7 +40,16 @@ create table ota_finance_private.fee_rule_versions (
   constraint fee_rule_valid_range check (
     effective_through is null or effective_through >= effective_from
   ),
-  unique(account_id, property_id, provider, currency, contract_key, version)
+  unique(account_id, property_id, provider, currency, contract_key, version),
+  constraint fee_rule_property_tenant_fk
+    foreign key (property_id, account_id)
+    references public.properties (id, account_id) on delete restrict,
+  constraint fee_rule_no_overlapping_periods
+    exclude using gist (
+      account_id with =, property_id with =, provider with =,
+      currency with =, contract_key with =,
+      daterange(effective_from, effective_through, '[]') with &&
+    )
 );
 
 create index fee_rule_versions_scope_date on ota_finance_private.fee_rule_versions (
@@ -44,7 +61,7 @@ create index fee_rule_versions_scope_date on ota_finance_private.fee_rule_versio
 create table ota_finance_private.statement_imports (
   id uuid primary key default gen_random_uuid(),
   account_id uuid not null references public.accounts(id) on delete restrict,
-  property_id text not null check (length(property_id) between 1 and 200),
+  property_id uuid not null,
   provider text not null check (length(provider) between 1 and 100),
   currency text not null check (currency ~ '^[A-Z]{3}$'),
   statement_external_id text not null
@@ -57,7 +74,10 @@ create table ota_finance_private.statement_imports (
   as_of_date date not null,
   imported_at timestamptz not null default now(),
   unique(account_id, property_id, provider, currency, statement_external_id),
-  unique(id, account_id, property_id, provider, currency)
+  unique(id, account_id, property_id, provider, currency),
+  constraint statement_property_tenant_fk
+    foreign key (property_id, account_id)
+    references public.properties (id, account_id) on delete restrict
 );
 
 -- Strict append-only movement ledger. A revision/correction is a NEW event.
@@ -66,7 +86,7 @@ create table ota_finance_private.cash_events (
   id uuid primary key default gen_random_uuid(),
   statement_import_id uuid not null,
   account_id uuid not null,
-  property_id text not null check (length(property_id) between 1 and 200),
+  property_id uuid not null,
   provider text not null check (length(provider) between 1 and 100),
   currency text not null check (currency ~ '^[A-Z]{3}$'),
   booking_id text not null check (length(booking_id) between 1 and 200),
@@ -85,7 +105,10 @@ create table ota_finance_private.cash_events (
     foreign key (statement_import_id, account_id, property_id, provider, currency)
     references ota_finance_private.statement_imports
     (id, account_id, property_id, provider, currency) on delete restrict,
-  unique(account_id, property_id, provider, currency, external_event_id)
+  unique(account_id, property_id, provider, currency, external_event_id),
+  constraint cash_event_property_tenant_fk
+    foreign key (property_id, account_id)
+    references public.properties (id, account_id) on delete restrict
 );
 
 create index cash_events_booking_scope on ota_finance_private.cash_events (
@@ -98,16 +121,19 @@ create table ota_finance_private.statement_reviews (
   id uuid primary key default gen_random_uuid(),
   statement_import_id uuid not null,
   account_id uuid not null,
-  property_id text not null,
+  property_id uuid not null,
   provider text not null,
   currency text not null,
-  actor_user_id uuid not null references auth.users(id) on delete restrict,
+  actor_user_id uuid not null references public.users(id) on delete restrict,
   outcome text not null check (outcome in ('accepted_for_review','rejected')),
   evidence_sha256 text not null check (evidence_sha256 ~ '^[0-9a-f]{64}$'),
   recorded_at timestamptz not null default now(),
   foreign key (statement_import_id, account_id, property_id, provider, currency)
     references ota_finance_private.statement_imports
-    (id, account_id, property_id, provider, currency) on delete restrict
+    (id, account_id, property_id, provider, currency) on delete restrict,
+  constraint statement_review_property_tenant_fk
+    foreign key (property_id, account_id)
+    references public.properties (id, account_id) on delete restrict
 );
 
 -- Private schema is NOT exposed through the Supabase Data API by default.
