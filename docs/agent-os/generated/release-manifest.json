@@ -10,7 +10,7 @@
   },
   "migrations": {
     "directory": "supabase/migrations",
-    "count": 136
+    "count": 137
   },
   "activeGates": [
     {

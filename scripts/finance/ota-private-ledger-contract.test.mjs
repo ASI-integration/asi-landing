@@ -118,3 +118,17 @@ test('transaction audit migration stays private, append-only and unverified', ()
   assert.doesNotMatch(audit,/grant\s+(update|delete|all)\b/i);
   assert.doesNotMatch(audit,/\bBANK_VERIFIED\b/);
 });
+
+test('denial audit migration is private, redacted and append-only', () => {
+  const sql = readFileSync(new URL(
+    '../../supabase/migrations/20261116160025_ota_finance_denial_audit_v1.sql',
+    import.meta.url), 'utf8');
+  assert.match(sql,/create table ota_finance_private\.access_denials/i);
+  assert.match(sql,/scope_sha256 text not null/i);
+  assert.match(sql,/outcome = 'DENIED'/i);
+  assert.match(sql,/alter table ota_finance_private\.access_denials enable row level security/i);
+  assert.match(sql,/revoke all on table ota_finance_private\.access_denials/i);
+  assert.match(sql,/grant select, insert on table ota_finance_private\.access_denials to service_role/i);
+  assert.doesNotMatch(sql,/grant\s+(all|update|delete)\b/i);
+  assert.doesNotMatch(sql,/\bguest_id\b|\bbooking_id\b|\bsession_token\b/i);
+});
