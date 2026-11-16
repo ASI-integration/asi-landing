@@ -41,7 +41,7 @@ class PublisherNegativeTests(unittest.TestCase):
             with self.assertRaisesRegex(p.Blocked,"DIRECT_OWNER_INTERACTIVE_ROOT_TTY_REQUIRED"):
                 p.promote()
     def test_missing_review_keeps_preflight_blocked(self):
-        with patch.object(p,"verify_artifact"),patch.object(p,"verify_archive_members",return_value=100),patch.object(p,"verify_stage",return_value="test"),patch.object(p,"verify_github",return_value=["PR664_STILL_DRAFT"]):
+        with patch.object(p,"verify_artifact"),patch.object(p,"verify_archive_members",return_value=100),patch.object(p,"verify_stage",return_value="test"),patch.object(p,"verify_github",return_value=["PR664_STILL_DRAFT"]),patch.object(p,"verify_publisher_review",return_value=[]):
             report=p.preflight()
             self.assertEqual(report["status"],"BLOCKED")
             self.assertEqual(report["stage_mutations"],0)
@@ -66,5 +66,32 @@ class PublisherNegativeTests(unittest.TestCase):
             with patch.object(p,"ARCHIVE",archive):
                 with self.assertRaisesRegex(p.Blocked,"LINK_ESCAPE"):
                     p.verify_archive_members()
+
+    def test_privileged_publisher_requires_own_independent_review(self):
+        import base64
+        source="approved source code\n"
+        pp={"state":"OPEN","isDraft":True,"reviewDecision":"",
+            "headRefOid":"a"*40,"author":{"login":"author"}}
+        entry={"content":base64.b64encode(source.encode()).decode()}
+        with patch.object(p,"gh",side_effect=[pp,[],entry,{"workflow_runs":[]}]), \
+             patch.object(p.pathlib.Path,"read_text",return_value=source):
+            blockers=p.verify_publisher_review()
+        self.assertIn("PR665_PUBLISHER_STILL_DRAFT",blockers)
+        self.assertIn("PR665_INDEPENDENT_REVIEW_MISSING",blockers)
+        self.assertIn("PR665_NATIVE_CI_NOT_PASSED",blockers)
+
+    def test_privileged_publisher_source_drift_blocked(self):
+        import base64
+        pp={"state":"OPEN","isDraft":False,"reviewDecision":"APPROVED",
+            "headRefOid":"a"*40,"author":{"login":"author"}}
+        reviews=[{"state":"APPROVED","commit_id":"a"*40,
+                  "user":{"login":"reviewer"}}]
+        entry={"content":base64.b64encode(b"wrong-reviewed-source\n").decode()}
+        ci={"workflow_runs":[{"name":"PR Validation","head_sha":"a"*40,
+                              "event":"pull_request","conclusion":"success"}]}
+        with patch.object(p,"gh",side_effect=[pp,reviews,entry,ci]), \
+             patch.object(p.pathlib.Path,"read_text",return_value="live-source"):
+            blockers=p.verify_publisher_review()
+        self.assertIn("PUBLISHER_SOURCE_NOT_APPROVED",blockers)
 
 if __name__=="__main__":unittest.main()
