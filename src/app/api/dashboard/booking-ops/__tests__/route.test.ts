@@ -96,7 +96,7 @@ vi.mock('@/lib/booking-ops/guest-legal-deposit-mvd-execution', () => ({
 }));
 
 vi.mock('@/lib/booking-ops/pre-checkin-control-center', () => {
-  const readPreCheckinStatus = vi.fn(async () => ({
+  const readinessSnapshot = () => ({
     bookingId: 'ops-route',
     status: 'ready_for_checkin',
     readinessScore: 100,
@@ -108,9 +108,10 @@ vi.mock('@/lib/booking-ops/pre-checkin-control-center', () => {
     lifecycleScore: 100,
     lastRecomputedAt: new Date().toISOString(),
     metadata: {},
-  }));
+  });
+  const readPreCheckinStatus = vi.fn(async () => readinessSnapshot());
   return {
-  getPreCheckinStatus: readPreCheckinStatus,
+  getPreCheckinStatus: vi.fn(async () => readinessSnapshot()),
   readPreCheckinStatus,
   listBookingsByReadinessStatus: vi.fn(async () => []),
   recomputeBookingCheckinReadiness: vi.fn(async () => ({
@@ -365,7 +366,8 @@ describe('Booking Ops dashboard routes', () => {
 
   it('stale pre-checkin readiness fails closed instead of proposing release work', async () => {
     const preCheckin = await import('@/lib/booking-ops/pre-checkin-control-center');
-    vi.mocked(preCheckin.getPreCheckinStatus).mockResolvedValueOnce({
+    vi.mocked(preCheckin.getPreCheckinStatus).mockClear();
+    vi.mocked(preCheckin.readPreCheckinStatus).mockResolvedValueOnce({
       bookingId: 'ops-route', status: 'ready_for_checkin', readinessScore: 100,
       hardBlockers: [], warnings: [], requiredActions: [], timeline: [], topBlocker: null,
       lifecycleScore: 100, lastRecomputedAt: '2026-01-01T00:00:00.000Z', metadata: {},
@@ -374,6 +376,8 @@ describe('Booking Ops dashboard routes', () => {
     const payload = await (await route.GET(new Request('https://asi.test?bookingId=ops-route'))).json();
     expect(payload.platformDecision.status).toBe('unavailable');
     expect(payload.platformDecision.permission.allowedActions).not.toContain('prepare_operator_draft');
+    expect(preCheckin.getPreCheckinStatus).not.toHaveBeenCalled();
+    expect(preCheckin.readPreCheckinStatus).toHaveBeenCalledOnce();
   });
 
   it('scope failures are generic and do not load readiness', async () => {
@@ -381,6 +385,7 @@ describe('Booking Ops dashboard routes', () => {
     const preCheckin = await import('@/lib/booking-ops/pre-checkin-control-center');
     vi.mocked(scope.resolveResidentialBookingIdentity).mockRejectedValueOnce(new Error('booking_scope_mismatch'));
     vi.mocked(preCheckin.getPreCheckinStatus).mockClear();
+    vi.mocked(preCheckin.readPreCheckinStatus).mockClear();
     const route = await import('../pre-checkin/route');
     const response = await route.GET(new Request('https://asi.test?bookingId=ops-route'));
     const payload = await response.json();
@@ -388,6 +393,7 @@ describe('Booking Ops dashboard routes', () => {
     expect(payload.message).toBe('Нет доступа к бронированию.');
     expect(payload.message).not.toContain('booking_scope');
     expect(preCheckin.getPreCheckinStatus).not.toHaveBeenCalled();
+    expect(preCheckin.readPreCheckinStatus).not.toHaveBeenCalled();
   });
 
   it('check-in execution API returns 401 when unauthenticated', async () => {
