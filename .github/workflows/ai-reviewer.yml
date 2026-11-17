@@ -1,0 +1,85 @@
+name: AI Reviewer Gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  adversarial-review:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.STRIGUNOV_APP_ID }}
+          private-key: ${{ secrets.STRIGUNOV_APP_PRIVATE_KEY }}
+
+      - name: Run Adversarial Model Review & Submit Verdict
+        env:
+          BOT_TOKEN: ${{ steps.app-token.outputs.token }}
+          CLOUDRU_API_KEY: ${{ secrets.CLOUDRU_API_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node -e '
+            const { execSync } = require("child_process");
+
+            async function main() {
+              const diff = execSync(`git diff ${process.env.BASE_SHA}...${process.env.HEAD_SHA}`, { maxBuffer: 10 * 1024 * 1024 }).toString();
+              if (!diff.trim()) process.exit(0);
+
+              const prompt = `Ты враждебный инженер-аудитор (плохой следователь). Твоя задача — найти критические баги, заглушки (TODO/mock), утечки секретов, поломку изоляции данных или необработанные ошибки в git diff.\nНе придирайся к стилю кода.\nЕсли критических проблем НЕТ — начни ответ строго со слова: APPROVE\nЕсли есть реальный баг или риск — начни со слова: REJECT и перечисли конкретные файлы и строки.\n\nDIFF:\n${diff.slice(0, 60000)}`;
+
+              const aiRes = await fetch("https://foundation-models.api.cloud.ru/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                  "Authorization": `Bearer ${process.env.CLOUDRU_API_KEY}`,
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  model: "anthropic/claude-opus-4-5",
+                  messages: [{ role: "user", content: prompt }],
+                  temperature: 0.1
+                })
+              });
+
+              const aiData = await aiRes.json();
+              const verdictText = aiData.choices?.[0]?.message?.content?.trim() || "REJECT: Empty model response";
+              const isApproved = verdictText.startsWith("APPROVE");
+
+              const ghRes = await fetch(`https://api.github.com/repos/${process.env.REPO}/pulls/${process.env.PR_NUMBER}/reviews`, {
+                method: "POST",
+                headers: {
+                  "Authorization": `Bearer ${process.env.BOT_TOKEN}`,
+                  "Accept": "application/vnd.github+json",
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  commit_id: process.env.HEAD_SHA,
+                  event: isApproved ? "APPROVE" : "REQUEST_CHANGES",
+                  body: verdictText
+                })
+              });
+
+              if (!ghRes.ok) {
+                console.error("GitHub API Error:", await ghRes.text());
+                process.exit(1);
+              }
+              console.log("Review submitted:", isApproved ? "APPROVE" : "REQUEST_CHANGES");
+            }
+            main();
+          '
