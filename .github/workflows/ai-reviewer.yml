@@ -51,15 +51,18 @@ jobs:
                   "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                  model: "anthropic/claude-opus-4-5",
+                  model: "anthropic/claude-opus-4.5",
                   messages: [{ role: "user", content: prompt }],
                   temperature: 0.1
                 })
               });
 
+              if (!aiRes.ok) { console.error("Cloud.ru HTTP status:", aiRes.status); process.exit(1); }
               const aiData = await aiRes.json();
               const verdictText = aiData.choices?.[0]?.message?.content?.trim() || "REJECT: Empty model response";
-              const isApproved = verdictText.startsWith("APPROVE");
+              const verdict = verdictText.split("\n", 1)[0].trim();
+              if (verdict !== "APPROVE" && verdict !== "REJECT") { console.error("Model verdict invalid"); process.exit(1); }
+              const isApproved = verdict === "APPROVE";
 
               const ghRes = await fetch(`https://api.github.com/repos/${process.env.REPO}/pulls/${process.env.PR_NUMBER}/reviews`, {
                 method: "POST",
@@ -81,5 +84,5 @@ jobs:
               }
               console.log("Review submitted:", isApproved ? "APPROVE" : "REQUEST_CHANGES");
             }
-            main();
+            main().catch(error => { console.error("Reviewer execution failed:", error.message); process.exitCode = 1; });
           '
