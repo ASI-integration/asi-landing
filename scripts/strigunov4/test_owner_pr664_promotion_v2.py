@@ -102,7 +102,7 @@ class PublisherNegativeTests(unittest.TestCase):
         self.assertIn("PUBLISHER_SOURCE_NOT_APPROVED",blockers)
 
     def test_fresh_authority_revocation_is_fail_closed(self):
-        with patch.object(p,"verify_github",return_value=["PR664_REVIEW_NOT_APPROVED"]), \\
+        with patch.object(p,"verify_github",return_value=["PR664_REVIEW_NOT_APPROVED"]), \
              patch.object(p,"verify_publisher_review",return_value=[]):
             with self.assertRaisesRegex(p.Blocked,"RELEASE_AUTHORITY_REVOKED_OR_STALE"):
                 p.assert_fresh_release_authority()
@@ -116,13 +116,13 @@ class PublisherNegativeTests(unittest.TestCase):
             current=stage/"current";current.symlink_to(old)
             lock=pathlib.Path(t)/"owner.lock"
             phrase="PROMOTE-PR664-"+p.SHA[:12]+"-"+p.ARTSHA[:12]
-            with patch.object(p,"STAGE",stage),patch.object(p,"CURRENT",current), \\
-                 patch.object(p,"OLD",old),patch.object(p,"TARGET",target), \\
-                 patch.object(p,"LOCK",lock),patch.object(p,"preflight",return_value={"status":"READY_FOR_OWNER_CONFIRMATION"}), \\
-                 patch.object(p,"verify_stage",return_value=str(old)),patch.object(p,"verify_artifact"), \\
-                 patch.object(p,"verify_archive_members"), \\
-                 patch.object(p,"assert_fresh_release_authority",side_effect=p.Blocked("REVOKED")), \\
-                 patch.object(p.os,"geteuid",return_value=0),patch.object(p.sys.stdin,"isatty",return_value=True), \\
+            with patch.object(p,"STAGE",stage),patch.object(p,"CURRENT",current), \
+                 patch.object(p,"OLD",old),patch.object(p,"TARGET",target), \
+                 patch.object(p,"LOCK",lock),patch.object(p,"preflight",return_value={"status":"READY_FOR_OWNER_CONFIRMATION"}), \
+                 patch.object(p,"verify_stage",return_value=str(old)),patch.object(p,"verify_artifact"), \
+                 patch.object(p,"verify_archive_members"), \
+                 patch.object(p,"assert_fresh_release_authority",side_effect=p.Blocked("REVOKED")), \
+                 patch.object(p.os,"geteuid",return_value=0),patch.object(p.sys.stdin,"isatty",return_value=True), \
                  patch("builtins.input",return_value=phrase):
                 with self.assertRaisesRegex(p.Blocked,"REVOKED"):
                     p.promote()
@@ -144,14 +144,14 @@ class PublisherNegativeTests(unittest.TestCase):
                 if args[:2]==("systemctl","restart"):restarts.append(True)
                 return ""
             def forbidden_switch(*args):switched.append(True)
-            with patch.object(p,"STAGE",stage),patch.object(p,"CURRENT",current), \\
-                 patch.object(p,"OLD",old),patch.object(p,"TARGET",target), \\
-                 patch.object(p,"LOCK",lock),patch.object(p,"preflight",return_value={"status":"READY_FOR_OWNER_CONFIRMATION"}), \\
-                 patch.object(p,"verify_stage",return_value=str(old)),patch.object(p,"verify_artifact"), \\
-                 patch.object(p,"verify_archive_members"), \\
-                 patch.object(p,"cmd",side_effect=fake_cmd),patch.object(p,"switch",side_effect=forbidden_switch), \\
-                 patch.object(p,"assert_fresh_release_authority",side_effect=[None,p.Blocked("REVOKED")]), \\
-                 patch.object(p.os,"geteuid",return_value=0),patch.object(p.sys.stdin,"isatty",return_value=True), \\
+            with patch.object(p,"STAGE",stage),patch.object(p,"CURRENT",current), \
+                 patch.object(p,"OLD",old),patch.object(p,"TARGET",target), \
+                 patch.object(p,"LOCK",lock),patch.object(p,"preflight",return_value={"status":"READY_FOR_OWNER_CONFIRMATION"}), \
+                 patch.object(p,"verify_stage",return_value=str(old)),patch.object(p,"verify_artifact"), \
+                 patch.object(p,"verify_archive_members"), \
+                 patch.object(p,"cmd",side_effect=fake_cmd),patch.object(p,"switch",side_effect=forbidden_switch), \
+                 patch.object(p,"assert_fresh_release_authority",side_effect=[None,p.Blocked("REVOKED")]), \
+                 patch.object(p.os,"geteuid",return_value=0),patch.object(p.sys.stdin,"isatty",return_value=True), \
                  patch("builtins.input",return_value=phrase):
                 with self.assertRaisesRegex(p.Blocked,"PROMOTION_FAILED_BEFORE_SWITCH"):
                     p.promote()
