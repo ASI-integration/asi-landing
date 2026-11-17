@@ -10,6 +10,9 @@ def pr(draft=False, review="APPROVED"):
        "author":{"login":"author"}}
 def review(commit=SHA,who="independent"):
     return [{"state":"APPROVED","commit_id":commit,"user":{"login":who}}]
+def compare(status="ahead"):
+    return {"status": status}
+
 def runs(event="pull_request",gov="success"):
     return {"workflow_runs":[
        {"name":"PR Validation","event":event,"conclusion":"success","head_sha":SHA},
@@ -17,8 +20,8 @@ def runs(event="pull_request",gov="success"):
          "conclusion":gov,"head_sha":SHA}]}
 
 class PublisherNegativeTests(unittest.TestCase):
-    def approval(self, pp, rr, runsdata):
-        with patch.object(p,"gh",side_effect=[pp,rr,runsdata]):
+    def approval(self, pp, rr, runsdata, comparedata=None):
+        with patch.object(p,"gh",side_effect=[pp,rr,runsdata,comparedata or compare()]):
             return p.verify_github()
     def test_exact_approved_native_checks_pass(self):
         self.assertEqual(self.approval(pr(),review(),runs()),[])
@@ -36,6 +39,10 @@ class PublisherNegativeTests(unittest.TestCase):
     def test_self_review_rejected(self):
         self.assertIn("INDEPENDENT_SHA_REVIEW_MISSING",
             self.approval(pr(),review(who="author"),runs()))
+    def test_not_up_to_date_with_main_blocks_release(self):
+        self.assertIn("PR664_NOT_UP_TO_DATE_WITH_MAIN",
+            self.approval(pr(),review(),runs(),compare("diverged")))
+
     def test_no_tty_cannot_promote(self):
         with patch.object(p.os,"geteuid",return_value=0),patch.object(p.sys.stdin,"isatty",return_value=False):
             with self.assertRaisesRegex(p.Blocked,"DIRECT_OWNER_INTERACTIVE_ROOT_TTY_REQUIRED"):
@@ -94,6 +101,64 @@ class PublisherNegativeTests(unittest.TestCase):
             blockers=p.verify_publisher_review()
         self.assertIn("PUBLISHER_SOURCE_NOT_APPROVED",blockers)
 
+    def test_fresh_authority_revocation_is_fail_closed(self):
+        with patch.object(p,"verify_github",return_value=["PR664_REVIEW_NOT_APPROVED"]), \\
+             patch.object(p,"verify_publisher_review",return_value=[]):
+            with self.assertRaisesRegex(p.Blocked,"RELEASE_AUTHORITY_REVOKED_OR_STALE"):
+                p.assert_fresh_release_authority()
+
+    def test_revocation_after_owner_input_keeps_stage_untouched(self):
+        with tempfile.TemporaryDirectory() as t:
+            stage=pathlib.Path(t)/"stage"
+            old=stage/"releases"/"old"
+            target=stage/"releases"/"new"
+            old.mkdir(parents=True)
+            current=stage/"current";current.symlink_to(old)
+            lock=pathlib.Path(t)/"owner.lock"
+            phrase="PROMOTE-PR664-"+p.SHA[:12]+"-"+p.ARTSHA[:12]
+            with patch.object(p,"STAGE",stage),patch.object(p,"CURRENT",current), \\
+                 patch.object(p,"OLD",old),patch.object(p,"TARGET",target), \\
+                 patch.object(p,"LOCK",lock),patch.object(p,"preflight",return_value={"status":"READY_FOR_OWNER_CONFIRMATION"}), \\
+                 patch.object(p,"verify_stage",return_value=str(old)),patch.object(p,"verify_artifact"), \\
+                 patch.object(p,"verify_archive_members"), \\
+                 patch.object(p,"assert_fresh_release_authority",side_effect=p.Blocked("REVOKED")), \\
+                 patch.object(p.os,"geteuid",return_value=0),patch.object(p.sys.stdin,"isatty",return_value=True), \\
+                 patch("builtins.input",return_value=phrase):
+                with self.assertRaisesRegex(p.Blocked,"REVOKED"):
+                    p.promote()
+            self.assertEqual(current.resolve(),old)
+            self.assertFalse(target.exists())
+
+    def test_revocation_after_extraction_blocks_switch(self):
+        with tempfile.TemporaryDirectory() as t:
+            stage=pathlib.Path(t)/"stage"
+            old=stage/"releases"/"old"
+            target=stage/"releases"/"new"
+            old.mkdir(parents=True)
+            current=stage/"current";current.symlink_to(old)
+            lock=pathlib.Path(t)/"owner.lock"
+            phrase="PROMOTE-PR664-"+p.SHA[:12]+"-"+p.ARTSHA[:12]
+            switched=[];restarts=[]
+            def fake_cmd(*args,**kwargs):
+                if args[0]=="tar":(target/"release-meta.json").write_text(json.dumps({"gitSha":p.SHA}))
+                if args[:2]==("systemctl","restart"):restarts.append(True)
+                return ""
+            def forbidden_switch(*args):switched.append(True)
+            with patch.object(p,"STAGE",stage),patch.object(p,"CURRENT",current), \\
+                 patch.object(p,"OLD",old),patch.object(p,"TARGET",target), \\
+                 patch.object(p,"LOCK",lock),patch.object(p,"preflight",return_value={"status":"READY_FOR_OWNER_CONFIRMATION"}), \\
+                 patch.object(p,"verify_stage",return_value=str(old)),patch.object(p,"verify_artifact"), \\
+                 patch.object(p,"verify_archive_members"), \\
+                 patch.object(p,"cmd",side_effect=fake_cmd),patch.object(p,"switch",side_effect=forbidden_switch), \\
+                 patch.object(p,"assert_fresh_release_authority",side_effect=[None,p.Blocked("REVOKED")]), \\
+                 patch.object(p.os,"geteuid",return_value=0),patch.object(p.sys.stdin,"isatty",return_value=True), \\
+                 patch("builtins.input",return_value=phrase):
+                with self.assertRaisesRegex(p.Blocked,"PROMOTION_FAILED_BEFORE_SWITCH"):
+                    p.promote()
+            self.assertEqual(current.resolve(),old)
+            self.assertEqual(switched,[])
+            self.assertEqual(restarts,[])
+
     def test_restart_failure_restores_old_symlink(self):
         with tempfile.TemporaryDirectory() as t:
             stage=pathlib.Path(t)/"stage"
@@ -120,6 +185,7 @@ class PublisherNegativeTests(unittest.TestCase):
                  patch.object(p,"verify_artifact"),patch.object(p,"verify_archive_members"), \
                  patch.object(p,"cmd",side_effect=fake_cmd), \
                  patch.object(p,"get",return_value=(200,b"")), \
+                 patch.object(p,"assert_fresh_release_authority"), \
                  patch.object(p.os,"geteuid",return_value=0), \
                  patch.object(p.sys.stdin,"isatty",return_value=True), \
                  patch("builtins.input",return_value=
