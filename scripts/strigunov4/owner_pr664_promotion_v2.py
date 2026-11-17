@@ -126,6 +126,9 @@ def verify_github():
         x.get("event") in ("pull_request","pull_request_target") and
         x.get("conclusion")=="success" for x in runs):
         blockers.append("TRUSTED_RELEASE_NOT_APPROVED")
+    compare=gh("api",f"repos/{repo}/compare/main...{SHA}")
+    if compare.get("status") not in ("ahead","identical"):
+        blockers.append("PR664_NOT_UP_TO_DATE_WITH_MAIN")
     return blockers
 
 def verify_publisher_review():
@@ -162,6 +165,17 @@ def verify_publisher_review():
                for x in ci.get("workflow_runs",[])):
         blockers.append("PR665_NATIVE_CI_NOT_PASSED")
     return blockers
+
+def assert_fresh_release_authority():
+    """Do not reuse a preflight's earlier review/CI result after owner input.
+
+    GitHub is re-read immediately before any privileged staging switch. The
+    previously checked immutable source and publisher must still be approved,
+    pass native CI and satisfy current-main ancestry. A remote error is fatal.
+    """
+    blockers=verify_github()+verify_publisher_review()
+    if blockers:raise Blocked("RELEASE_AUTHORITY_REVOKED_OR_STALE")
+
 
 def preflight():
     blockers=[];ok=[]
@@ -210,6 +224,7 @@ def promote():
         print("Staging only, no-send. Old release retained. Exact approval: "+phrase,flush=True)
         if input("Owner confirmation: ").strip()!=phrase:raise Blocked("OWNER_DID_NOT_AUTHORIZE")
         verify_stage();verify_artifact();verify_archive_members()
+        assert_fresh_release_authority()
         TARGET.mkdir(mode=0o700)
         changed=False
         try:
@@ -218,6 +233,11 @@ def promote():
             if json.loads((TARGET/"release-meta.json").read_text())!={"gitSha":SHA}:
                 raise Blocked("EXTRACTED_METADATA_DRIFT")
             cmd("chown","-R","asi-strigunov-stage:asi-strigunov-stage",str(TARGET),timeout=300)
+            # Closing the review/CI TOCTOU gap: never trust a result fetched
+            # before potentially lengthy extraction/chown or owner input.
+            assert_fresh_release_authority()
+            if not CURRENT.is_symlink() or CURRENT.resolve()!=OLD:
+                raise Blocked("STAGING_LINK_CHANGED_BEFORE_SWITCH")
             switch(TARGET,"new");changed=True
             cmd("systemctl","restart",SERVICE,timeout=90)
             postcheck()
