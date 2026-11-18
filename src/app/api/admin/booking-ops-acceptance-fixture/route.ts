@@ -16,6 +16,49 @@ const fixtureRateLimit = { windowStart: 0, used: 0 };
 const WINDOW_MS = 60_000;
 const MAX_CALLS_PER_WINDOW = 5;
 
+const MAX_FIXTURE_BODY_BYTES = 2048;
+
+// Bound bytes while reading. A Content-Length check alone is insufficient
+// because clients can omit or misstate it. Do not buffer an unbounded body.
+async function readBoundedFixtureBody(req: Request): Promise<string | null> {
+  const declared = req.headers.get('content-length');
+  if (declared !== null &&
+      (!/^(0|[1-9][0-9]*)$/.test(declared) || Number(declared) > MAX_FIXTURE_BODY_BYTES)) {
+    return null;
+  }
+  const reader = req.body?.getReader();
+  if (!reader) return '';
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_FIXTURE_BODY_BYTES) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return null;
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
 function consumeFixtureRateLimit(): number {
   // Monotonic time is immune to system clock changes.
   const now = performance.now();
@@ -116,8 +159,8 @@ export async function POST(req: Request) {
       status: 429, headers: { 'Retry-After': String(retryAfter) },
     });
   }
-  const raw = await req.text();
-  if (raw.length > 2048) {
+  const raw = await readBoundedFixtureBody(req);
+  if (raw === null) {
     return NextResponse.json({ ok: false, message: 'payload_too_large' }, { status: 413 });
   }
   let body: unknown;
