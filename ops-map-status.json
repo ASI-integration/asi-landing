@@ -1,9 +1,9 @@
 {
   "currentStage": 4,
   "facts": {
-    "lastClosedAt": "2026-11-18T17:15:41Z",
+    "lastClosedAt": "2026-11-18T17:50:18Z",
     "lastClosedMerged": true,
-    "lastClosedPr": 672,
+    "lastClosedPr": 671,
     "pr658Merged": true,
     "pr664Merged": true,
     "pr665Merged": true,
@@ -20,7 +20,7 @@
   "schema": "asi.ops-map.v1",
   "source": {
     "branch": "asi/ops-map-live",
-    "mainSha": "7e75cb284a21771e706793cf0e0366efb1622819",
+    "mainSha": "f25ccd8dff5eb9de60f83967fb15449f26ce8fa1",
     "repository": "ASI-integration/asi-landing"
   },
   "stages": [
@@ -46,5 +46,5 @@
     }
   ],
   "summary": "READY_FOR_DEMO: N01–N15, B01, T30 и финансы PASS. Дебет=кредит, no-send, очистка 0. Следующий этап — первые объекты (после ревью и merge PR).",
-  "updatedAt": "2026-11-18T17:15:57.566546+00:00"
+  "updatedAt": "2026-11-18T17:50:52.055345+00:00"
 }
