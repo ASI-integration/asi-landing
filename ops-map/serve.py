@@ -9,6 +9,10 @@ ROOT = Path("/opt/asi-ops-map")
 PORT = int(os.getenv("ASI_MAP_PORT", "3101"))
 
 class Handler(BaseHTTPRequestHandler):
+    def do_HEAD(self):
+        self._head_only = True
+        self.do_GET()
+
     def do_GET(self):
         path = urlsplit(self.path).path
         if path in ("/", "/roadmap", "/roadmap/"):
@@ -40,7 +44,8 @@ class Handler(BaseHTTPRequestHandler):
              "frame-ancestors 'none'")):
             self.send_header(k,v)
         self.end_headers()
-        self.wfile.write(data)
+        if not getattr(self, "_head_only", False):
+            self.wfile.write(data)
 
     def log_message(self, fmt, *args):
         pass

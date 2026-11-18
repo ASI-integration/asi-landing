@@ -60,13 +60,17 @@ def stage_running():
 def build():
     main=api("git/ref/heads/main")["object"]["sha"]
     p658,p664,p665,p669=[pr(n) for n in (658,664,665,669)]
+    # Also detect any newly closed PR, not just the four milestone PRs.
+    recently_closed=api("pulls?state=closed&sort=updated&direction=desc&per_page=30")
+    last_closed=max(recently_closed, key=lambda item:item.get("closed_at") or "",
+                    default={})
     done=sum((p658["merged"],p664["merged"],p665["merged"],p669["merged"]))
     pipeline=100 if p665["merged"] else 95 if p658["merged"] and p664["merged"] else 75 if p658["merged"] else 55
     pilot=acceptance(main) if p665["merged"] else 0
     if not p665["merged"]:
         status=("Подтвердить финальный выпуск проверенного кода"
                 if not owner_approved(p665["head"])
-                else "Завершить обязательные проверки перед выпуском")
+                else "Подтвердить безопасное включение тестового стенда после выпуска")
     elif pilot<100:
         status="Подтвердить безопасный запуск и полный тест аренды"
     else:
@@ -88,7 +92,10 @@ def build():
             {"percent":0,"detail":"Новые направления пока в планах"}],
         "health":health,
         "facts":{"pr658Merged":p658["merged"],"pr664Merged":p664["merged"],
-                 "pr665Merged":p665["merged"],"pr669Merged":p669["merged"]}}
+                 "pr665Merged":p665["merged"],"pr669Merged":p669["merged"],
+                 "lastClosedPr":last_closed.get("number"),
+                 "lastClosedAt":last_closed.get("closed_at"),
+                 "lastClosedMerged":bool(last_closed.get("merged_at"))}}
 
 def atomic_write(path, raw):
     path.parent.mkdir(parents=True,exist_ok=True)
