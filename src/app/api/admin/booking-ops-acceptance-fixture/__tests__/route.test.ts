@@ -93,6 +93,16 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
       p_allowed_property_id: OWNER_PROPERTY,
     });
   });
+  it('counts malformed requests with valid admin and request proof toward the five-call limit', async () => {
+    const invalid = { ...body(), acknowledgeSyntheticOnly: false };
+    for (let n = 0; n < 5; n += 1) {
+      expect((await POST(request(invalid))).status).toBe(400);
+    }
+    const overLimit = await POST(request(invalid));
+    expect(overLimit.status).toBe(429);
+    expect(overLimit.headers.get('Retry-After')).toMatch(/^[1-9][0-9]*$/);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
   it('limits valid admin attempts to five per process per minute, then returns 429', async () => {
     for (let n = 0; n < 5; n += 1) {
       expect((await POST(request())).status).toBe(200);

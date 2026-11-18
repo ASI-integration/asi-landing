@@ -106,6 +106,16 @@ export async function POST(req: Request) {
       !/^application\/json(?:\s*;|$)/i.test(req.headers.get('content-type') || '')) {
     return NextResponse.json({ ok: false, message: 'origin_or_json_required' }, { status: 403 });
   }
+  // Apply the rate limit BEFORE parsing attacker-controlled request payloads,
+  // but only after authentication, owner pinning, and secret/origin proofs.
+  // This prevents malformed privileged requests from bypassing the cap or
+  // allowing unauthenticated requests to exhaust the owner operator's quota.
+  const retryAfter = consumeFixtureRateLimit();
+  if (retryAfter !== 0) {
+    return NextResponse.json({ ok: false, message: 'too_many_requests' }, {
+      status: 429, headers: { 'Retry-After': String(retryAfter) },
+    });
+  }
   const raw = await req.text();
   if (raw.length > 2048) {
     return NextResponse.json({ ok: false, message: 'payload_too_large' }, { status: 413 });
@@ -122,15 +132,6 @@ export async function POST(req: Request) {
       fields.confirm !== true || fields.noSend !== true ||
       fields.acknowledgeSyntheticOnly !== true) {
     return NextResponse.json({ ok: false, message: 'explicit_pinned_fixture_confirmation_required' }, { status: 400 });
-  }
-
-  // Count only authenticated, correctly scoped request attempts. This
-  // synchronous limiter executes before any database/network RPC.
-  const retryAfter = consumeFixtureRateLimit();
-  if (retryAfter !== 0) {
-    return NextResponse.json({ ok: false, message: 'too_many_requests' }, {
-      status: 429, headers: { 'Retry-After': String(retryAfter) },
-    });
   }
 
   let access: Awaited<ReturnType<typeof requireBookingOpsRouteAccess>>;
