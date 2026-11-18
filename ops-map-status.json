@@ -1,13 +1,16 @@
 {
   "currentStage": 2,
   "facts": {
+    "lastClosedAt": "2026-11-18T12:05:52Z",
+    "lastClosedMerged": true,
+    "lastClosedPr": 664,
     "pr658Merged": true,
     "pr664Merged": true,
     "pr665Merged": false,
     "pr669Merged": true
   },
   "header": {
-    "reason": "Завершить обязательные проверки перед выпуском",
+    "reason": "Подтвердить безопасное включение тестового стенда после выпуска",
     "state": "owner"
   },
   "health": {
@@ -43,5 +46,5 @@
     }
   ],
   "summary": "Выпущено 3 из 4 ключевых изменений. Готовим финальный выпуск конвейера.",
-  "updatedAt": "2026-11-18T13:11:19.507908+00:00"
+  "updatedAt": "2026-11-18T13:18:12.884836+00:00"
 }
