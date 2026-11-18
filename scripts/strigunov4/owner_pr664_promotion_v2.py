@@ -4,18 +4,18 @@ import argparse, fcntl, hashlib, json, os, pathlib, subprocess, sys, tarfile, po
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 from urllib.error import HTTPError, URLError
 
-SHA="f64fd3a320a139f80de3bb2483dac191ab3db30a"
-ARTSHA="a29f3b7cfeaa6799becaedf3b6ebc3113bada4651c52eae69eaa57e589801944"
-MANSHA="4d7126e4b8850bb304669a66ff4fb33c1b9f8ef036c9609915c2514fb391a09d"
+SHA="c1746cc8e199a0ad9d3598b37d2fa952fea8e214"
+SOURCE_PR_HEAD="0266587e4e6337968f093c20f05d0b4b35aac5f8"
+ARTSHA="3cbbf031a681bffe03b2ab74d53ea1ea2a65fd7b616d19eb752932e6a310aa7e"
+MANSHA="cd81fd64de94fcc6a4111e81197f4748484dfb10b94f31e763e7b7c0309e5821"
 BASE=pathlib.Path("/home/administrator/asi-v11-candidate")
-SRC=BASE/"onecom-g2-clean-build-pr664-20261116"
-ART=BASE/"release-artifacts-pr664-20261116"
-ARCHIVE=ART/"asi-strigunov-pr664-f64fd3a320a1.tar.zst"
-MANIFEST=ART/"RELEASE-CANDIDATE-MANIFEST-20261116.json"
+SRC=BASE/"onecom-g2-clean-build-c1746cc8-20261118"
+ART=BASE/"release-artifacts-c1746cc8-20261118"
+ARCHIVE=ART/"asi-strigunov-main-c1746cc8e199.tar.gz"
+MANIFEST=ART/"RELEASE-CANDIDATE-MANIFEST-c1746cc8-20261118.json"
 STAGE=pathlib.Path("/srv/asi-strigunov-stage")
 CURRENT=STAGE/"current"
-OLD=STAGE/"releases/asi-stage-pr658-f34db2031e6edf1a"
-TARGET=STAGE/"releases/asi-stage-pr664-f64fd3a320a139f"
+TARGET=STAGE/"releases/asi-stage-main-c1746cc8e199"
 LOCK=BASE/"integration/owner-pr664-promotion.lock"
 SERVICE="asi-strigunov-stage.service"
 FLAGS={"ASI_APP_ROOT":str(CURRENT),"ASI_DEPLOY_ENV":"staging",
@@ -52,43 +52,47 @@ def get(path):
 def verify_artifact():
     if hashfile(ARCHIVE)!=ARTSHA or hashfile(MANIFEST)!=MANSHA:raise Blocked("SEALED_HASH_DRIFT")
     m=json.loads(MANIFEST.read_text("utf8"))
-    if (m.get("source_sha")!=SHA or m.get("artifact_sha256")!=ARTSHA or
+    if (m.get("source_sha")!=SHA or m.get("source_pr_head")!=SOURCE_PR_HEAD or
+        m.get("source_pr")!=664 or m.get("archive_name")!=ARCHIVE.name or
+        m.get("artifact_sha256")!=ARTSHA or
         m.get("release_state")!="SEALED_CANDIDATE_NOT_PROMOTED" or
         m.get("stage_release_promoted") is not False):raise Blocked("MANIFEST_DRIFT")
     if cmd("runuser","-u","administrator","--","git","-C",str(SRC),"rev-parse","HEAD")!=SHA:raise Blocked("SOURCE_HEAD_DRIFT")
     if cmd("runuser","-u","administrator","--","git","-C",str(SRC),"ls-files","-m"):raise Blocked("DIRTY_TRACKED_FILES")
-    if json.loads((SRC/"release-meta.json").read_text())!={"gitSha":SHA}:raise Blocked("VERSION_METADATA_DRIFT")
+    if json.loads((SRC/"release/release-meta.json").read_text())!={"gitSha":SHA}:raise Blocked("VERSION_METADATA_DRIFT")
     if not (SRC/".next/BUILD_ID").is_file():raise Blocked("BUILD_MISSING")
     return m
 
 def verify_archive_members():
-    # A privileged untar is never allowed before this stream safety check.
-    p=subprocess.Popen(["zstd","-dc",str(ARCHIVE)],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+    # Pre-scan the pinned gzip tar stream; no unreviewed extraction.
     names=set()
     try:
-        with tarfile.open(fileobj=p.stdout,mode="r|") as arc:
+        with tarfile.open(ARCHIVE,mode="r|gz") as arc:
             for obj in arc:
                 n=obj.name.removeprefix("./")
                 if not n:continue
-                if (n.startswith("/") or posixpath.normpath(n) != n.rstrip("/") or
-                    n in names or not (obj.isfile() or obj.isdir() or obj.issym())):raise Blocked("UNSAFE_TAR_PATH")
+                if (n.startswith("/") or posixpath.normpath(n)!=n.rstrip("/") or
+                    n in names or not (obj.isfile() or obj.isdir() or obj.issym())):
+                    raise Blocked("UNSAFE_TAR_PATH")
                 names.add(n)
                 if n==".git" or n.startswith(".git/") or n in (".env",".env.local",".env.production",".npmrc"):
                     raise Blocked("UNREVIEWED_ARCHIVE_CONTENT")
                 if obj.issym():
                     dest=posixpath.normpath(posixpath.join(posixpath.dirname(n),obj.linkname))
-                    if obj.linkname.startswith("/") or dest==".." or dest.startswith("../"):raise Blocked("LINK_ESCAPE")
-    finally:
-        if p.stdout:p.stdout.close()
-        try:p.wait(timeout=20)
-        except subprocess.TimeoutExpired:p.kill();p.wait()
-    if p.returncode:raise Blocked("ARCHIVE_DECOMPRESSION_FAILED")
+                    if obj.linkname.startswith("/") or dest==".." or dest.startswith("../"):
+                        raise Blocked("LINK_ESCAPE")
+    except (tarfile.TarError,EOFError,OSError) as e:
+        raise Blocked("ARCHIVE_UNREADABLE") from e
     if not {".next/BUILD_ID","release-meta.json","node_modules/next/package.json"}.issubset(names):
         raise Blocked("ARCHIVE_INCOMPLETE")
     return len(names)
 
 def verify_stage():
-    if not CURRENT.is_symlink() or CURRENT.resolve()!=OLD:raise Blocked("STAGING_LINK_CHANGED")
+    if not CURRENT.is_symlink():raise Blocked("STAGING_LINK_CHANGED")
+    previous=CURRENT.resolve(strict=True)
+    release_dir=(STAGE/"releases").resolve(strict=True)
+    if previous.parent!=release_dir or not previous.is_dir() or previous==TARGET:
+        raise Blocked("STAGING_RELEASE_PATH_UNVERIFIED")
     if TARGET.exists() or TARGET.is_symlink():raise Blocked("TARGET_ALREADY_EXISTS")
     data=cmd("systemctl","show",SERVICE,"-p","ActiveState","-p","MainPID","-p","User","-p","WorkingDirectory")
     fields=dict(s.split("=",1) for s in data.splitlines() if "=" in s)
@@ -100,35 +104,39 @@ def verify_stage():
     env=dict(s.split(b"=",1) for s in raw.split(bytes([0])) if b"=" in s)
     if any(env.get(k.encode())!=v.encode() for k,v in FLAGS.items()):raise Blocked("NO_SEND_POLICY_DRIFT")
     if get("/api/health")[0]!=200:raise Blocked("LIVE_HEALTH_NOT_READY")
-    return str(OLD)
+    return str(previous)
 
 def verify_github():
     repo="ASI-integration/asi-landing"
-    pr=gh("pr","view","664","--repo",repo,"--json","state,isDraft,reviewDecision,headRefOid,baseRefName,author")
+    pr=gh("pr","view","664","--repo",repo,"--json","state,isDraft,reviewDecision,headRefOid,baseRefName,author,mergeCommit")
     blockers=[]
-    if pr.get("state")!="OPEN" or pr.get("isDraft") is not False:blockers.append("PR664_STILL_DRAFT")
-    if pr.get("headRefOid")!=SHA or pr.get("baseRefName")!="asi/acceptance-fixture-provision-20261116":
-        blockers.append("PR664_SOURCE_NOT_PINNED")
-    if pr.get("reviewDecision")!="APPROVED":blockers.append("PR664_REVIEW_NOT_APPROVED")
+    if pr.get("state")!="MERGED" or pr.get("isDraft") is not False:
+        blockers.append("PR664_NOT_MERGED")
+    if (pr.get("headRefOid")!=SOURCE_PR_HEAD or pr.get("baseRefName")!="main" or
+        (pr.get("mergeCommit") or {}).get("oid")!=SHA):
+        blockers.append("PR664_MERGE_SOURCE_NOT_PINNED")
+    # GitHub clears reviewDecision after merge; trust only independently approved exact-head reviews below.
+    if pr.get("state")!="MERGED" and pr.get("reviewDecision")!="APPROVED":
+        blockers.append("PR664_REVIEW_NOT_APPROVED")
     rev=gh("api",f"repos/{repo}/pulls/664/reviews","--paginate")
     author=(pr.get("author") or {}).get("login")
     latest={}
     for r in rev:
         who=(r.get("user") or {}).get("login")
         if who:latest[who]=r
-    if not any(r.get("state")=="APPROVED" and r.get("commit_id")==SHA and who!=author for who,r in latest.items()):
+    if not any(r.get("state")=="APPROVED" and r.get("commit_id")==SOURCE_PR_HEAD and who!=author for who,r in latest.items()):
         blockers.append("INDEPENDENT_SHA_REVIEW_MISSING")
-    runs=gh("api",f"repos/{repo}/actions/runs","-X","GET","-f",f"head_sha={SHA}","-f","per_page=100").get("workflow_runs",[])
-    if not any(x.get("name")=="PR Validation" and x.get("head_sha")==SHA and
+    runs=gh("api",f"repos/{repo}/actions/runs","-X","GET","-f",f"head_sha={SOURCE_PR_HEAD}","-f","per_page=100").get("workflow_runs",[])
+    if not any(x.get("name")=="PR Validation" and x.get("head_sha")==SOURCE_PR_HEAD and
         x.get("event")=="pull_request" and x.get("conclusion")=="success" for x in runs):
         blockers.append("NATIVE_PR_CI_NOT_PASSED")
-    if not any(x.get("name")=="ASI trusted release governance" and x.get("head_sha")==SHA and
+    if not any(x.get("name")=="ASI trusted release governance" and x.get("head_sha")==SOURCE_PR_HEAD and
         x.get("event") in ("pull_request","pull_request_target") and
         x.get("conclusion")=="success" for x in runs):
         blockers.append("TRUSTED_RELEASE_NOT_APPROVED")
-    compare=gh("api",f"repos/{repo}/compare/main...{SHA}")
+    compare=gh("api",f"repos/{repo}/compare/{SHA}...main")
     if compare.get("status") not in ("ahead","identical"):
-        blockers.append("PR664_NOT_UP_TO_DATE_WITH_MAIN")
+        blockers.append("SEALED_MAIN_SOURCE_NOT_ANCESTOR")
     return blockers
 
 def verify_publisher_review():
@@ -136,11 +144,11 @@ def verify_publisher_review():
     import base64
     repo="ASI-integration/asi-landing"
     pp=gh("pr","view","665","--repo",repo,
-          "--json","state,isDraft,reviewDecision,headRefOid,author")
+          "--json","state,isDraft,reviewDecision,headRefOid,author,baseRefName")
     head=pp.get("headRefOid","")
     blockers=[]
-    if pp.get("state")!="OPEN" or pp.get("isDraft") is not False:
-        blockers.append("PR665_PUBLISHER_STILL_DRAFT")
+    if pp.get("state")!="MERGED" or pp.get("isDraft") is not False or pp.get("baseRefName")!="main":
+        blockers.append("PR665_PUBLISHER_NOT_MERGED_TO_MAIN")
     if pp.get("reviewDecision")!="APPROVED":
         blockers.append("PR665_PUBLISHER_NOT_APPROVED")
     reviews=gh("api",f"repos/{repo}/pulls/665/reviews","--paginate")
@@ -223,20 +231,20 @@ def promote():
         phrase="PROMOTE-PR664-"+SHA[:12]+"-"+ARTSHA[:12]
         print("Staging only, no-send. Old release retained. Exact approval: "+phrase,flush=True)
         if input("Owner confirmation: ").strip()!=phrase:raise Blocked("OWNER_DID_NOT_AUTHORIZE")
-        verify_stage();verify_artifact();verify_archive_members()
+        previous=pathlib.Path(verify_stage());verify_artifact();verify_archive_members()
         assert_fresh_release_authority()
         TARGET.mkdir(mode=0o700)
         changed=False
         try:
-            cmd("tar","-I","zstd","--no-same-owner","--no-same-permissions",
-                "-xf",str(ARCHIVE),"-C",str(TARGET),timeout=300)
+            cmd("tar","--no-same-owner","--no-same-permissions",
+                "-xzf",str(ARCHIVE),"-C",str(TARGET),timeout=300)
             if json.loads((TARGET/"release-meta.json").read_text())!={"gitSha":SHA}:
                 raise Blocked("EXTRACTED_METADATA_DRIFT")
             cmd("chown","-R","asi-strigunov-stage:asi-strigunov-stage",str(TARGET),timeout=300)
             # Closing the review/CI TOCTOU gap: never trust a result fetched
             # before potentially lengthy extraction/chown or owner input.
             assert_fresh_release_authority()
-            if not CURRENT.is_symlink() or CURRENT.resolve()!=OLD:
+            if not CURRENT.is_symlink() or CURRENT.resolve()!=previous:
                 raise Blocked("STAGING_LINK_CHANGED_BEFORE_SWITCH")
             switch(TARGET,"new");changed=True
             cmd("systemctl","restart",SERVICE,timeout=90)
@@ -245,7 +253,7 @@ def promote():
         except Exception as exc:
             if changed:
                 try:
-                    switch(OLD,"rollback")
+                    switch(previous,"rollback")
                     cmd("systemctl","restart",SERVICE,timeout=90)
                     for attempt in range(12):
                         try:

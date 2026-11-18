@@ -5,19 +5,19 @@ import owner_pr664_promotion_v2 as p
 
 SHA=p.SHA
 def pr(draft=False, review="APPROVED"):
-    return {"state":"OPEN","isDraft":draft,"reviewDecision":review,
-       "headRefOid":SHA,"baseRefName":"asi/acceptance-fixture-provision-20261116",
-       "author":{"login":"author"}}
-def review(commit=SHA,who="independent"):
+    return {"state":"MERGED" if not draft else "OPEN","isDraft":draft,"reviewDecision":review,
+       "headRefOid":p.SOURCE_PR_HEAD,"baseRefName":"main",
+       "mergeCommit":{"oid":SHA},"author":{"login":"author"}}
+def review(commit=p.SOURCE_PR_HEAD,who="independent"):
     return [{"state":"APPROVED","commit_id":commit,"user":{"login":who}}]
 def compare(status="ahead"):
     return {"status": status}
 
 def runs(event="pull_request",gov="success"):
     return {"workflow_runs":[
-       {"name":"PR Validation","event":event,"conclusion":"success","head_sha":SHA},
+       {"name":"PR Validation","event":event,"conclusion":"success","head_sha":p.SOURCE_PR_HEAD},
        {"name":"ASI trusted release governance","event":"pull_request",
-         "conclusion":gov,"head_sha":SHA}]}
+         "conclusion":gov,"head_sha":p.SOURCE_PR_HEAD}]}
 
 class PublisherNegativeTests(unittest.TestCase):
     def approval(self, pp, rr, runsdata, comparedata=None):
@@ -26,7 +26,7 @@ class PublisherNegativeTests(unittest.TestCase):
     def test_exact_approved_native_checks_pass(self):
         self.assertEqual(self.approval(pr(),review(),runs()),[])
     def test_draft_never_approved(self):
-        self.assertIn("PR664_STILL_DRAFT",self.approval(pr(draft=True),review(),runs()))
+        self.assertIn("PR664_NOT_MERGED",self.approval(pr(draft=True),review(),runs()))
     def test_dispatch_only_ci_not_trusted(self):
         self.assertIn("NATIVE_PR_CI_NOT_PASSED",
             self.approval(pr(),review(),runs(event="workflow_dispatch")))
@@ -40,15 +40,42 @@ class PublisherNegativeTests(unittest.TestCase):
         self.assertIn("INDEPENDENT_SHA_REVIEW_MISSING",
             self.approval(pr(),review(who="author"),runs()))
     def test_not_up_to_date_with_main_blocks_release(self):
-        self.assertIn("PR664_NOT_UP_TO_DATE_WITH_MAIN",
+        self.assertIn("SEALED_MAIN_SOURCE_NOT_ANCESTOR",
             self.approval(pr(),review(),runs(),compare("diverged")))
 
+    def test_merged_source_approved_by_exact_review_without_review_decision(self):
+        merged=pr()
+        merged["reviewDecision"]=""
+        self.assertEqual(self.approval(merged,review(),runs()),[])
+    def test_source_pr_merge_identity_mismatch_fails_closed(self):
+        bad=pr()
+        bad["mergeCommit"]={"oid":"f"*40}
+        self.assertIn("PR664_MERGE_SOURCE_NOT_PINNED",self.approval(bad,review(),runs()))
+    def test_source_pr_wrong_head_fails_closed(self):
+        bad=pr()
+        bad["headRefOid"]="a"*40
+        self.assertIn("PR664_MERGE_SOURCE_NOT_PINNED",self.approval(bad,review(),runs()))
+    def test_source_pr_not_merged_fails_closed(self):
+        bad=pr()
+        bad["state"]="OPEN"
+        self.assertIn("PR664_NOT_MERGED",self.approval(bad,review(),runs()))
+    def test_incomplete_gzip_archive_is_blocked(self):
+        with tempfile.TemporaryDirectory() as root:
+            archive=pathlib.Path(root)/"incomplete.tar.gz"
+            with tarfile.open(archive,"w:gz") as out:
+                info=tarfile.TarInfo("some-file")
+                payload=b"test"
+                info.size=len(payload)
+                out.addfile(info,io.BytesIO(payload))
+            with patch.object(p,"ARCHIVE",archive):
+                with self.assertRaisesRegex(p.Blocked,"ARCHIVE_INCOMPLETE"):
+                    p.verify_archive_members()
     def test_no_tty_cannot_promote(self):
         with patch.object(p.os,"geteuid",return_value=0),patch.object(p.sys.stdin,"isatty",return_value=False):
             with self.assertRaisesRegex(p.Blocked,"DIRECT_OWNER_INTERACTIVE_ROOT_TTY_REQUIRED"):
                 p.promote()
     def test_missing_review_keeps_preflight_blocked(self):
-        with patch.object(p,"verify_artifact"),patch.object(p,"verify_archive_members",return_value=100),patch.object(p,"verify_stage",return_value="test"),patch.object(p,"verify_github",return_value=["PR664_STILL_DRAFT"]),patch.object(p,"verify_publisher_review",return_value=[]):
+        with patch.object(p,"verify_artifact"),patch.object(p,"verify_archive_members",return_value=100),patch.object(p,"verify_stage",return_value="test"),patch.object(p,"verify_github",return_value=["PR664_NOT_MERGED"]),patch.object(p,"verify_publisher_review",return_value=[]):
             report=p.preflight()
             self.assertEqual(report["status"],"BLOCKED")
             self.assertEqual(report["stage_mutations"],0)
@@ -64,12 +91,11 @@ class PublisherNegativeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as t:
             tar=pathlib.Path(t)/"unsafe.tar"
             archive=pathlib.Path(t)/"unsafe.tar.zst"
-            with tarfile.open(tar,"w") as f:
+            with tarfile.open(archive,"w:gz") as f:
                 item=tarfile.TarInfo("./node_modules/escape")
                 item.type=tarfile.SYMTYPE
                 item.linkname="../../../../etc"
                 f.addfile(item)
-            subprocess.run(["zstd","-q","-o",str(archive),str(tar)],check=True)
             with patch.object(p,"ARCHIVE",archive):
                 with self.assertRaisesRegex(p.Blocked,"LINK_ESCAPE"):
                     p.verify_archive_members()
@@ -78,19 +104,19 @@ class PublisherNegativeTests(unittest.TestCase):
         import base64
         source="approved source code\n"
         pp={"state":"OPEN","isDraft":True,"reviewDecision":"",
-            "headRefOid":"a"*40,"author":{"login":"author"}}
+            "headRefOid":"a"*40,"baseRefName":"main","author":{"login":"author"}}
         entry={"content":base64.b64encode(source.encode()).decode()}
         with patch.object(p,"gh",side_effect=[pp,[],entry,{"workflow_runs":[]}]), \
              patch.object(p.pathlib.Path,"read_text",return_value=source):
             blockers=p.verify_publisher_review()
-        self.assertIn("PR665_PUBLISHER_STILL_DRAFT",blockers)
+        self.assertIn("PR665_PUBLISHER_NOT_MERGED_TO_MAIN",blockers)
         self.assertIn("PR665_INDEPENDENT_REVIEW_MISSING",blockers)
         self.assertIn("PR665_NATIVE_CI_NOT_PASSED",blockers)
 
     def test_privileged_publisher_source_drift_blocked(self):
         import base64
-        pp={"state":"OPEN","isDraft":False,"reviewDecision":"APPROVED",
-            "headRefOid":"a"*40,"author":{"login":"author"}}
+        pp={"state":"MERGED","isDraft":False,"reviewDecision":"APPROVED",
+            "headRefOid":"a"*40,"baseRefName":"main","author":{"login":"author"}}
         reviews=[{"state":"APPROVED","commit_id":"a"*40,
                   "user":{"login":"reviewer"}}]
         entry={"content":base64.b64encode(b"wrong-reviewed-source\n").decode()}
@@ -117,7 +143,7 @@ class PublisherNegativeTests(unittest.TestCase):
             lock=pathlib.Path(t)/"owner.lock"
             phrase="PROMOTE-PR664-"+p.SHA[:12]+"-"+p.ARTSHA[:12]
             with patch.object(p,"STAGE",stage),patch.object(p,"CURRENT",current), \
-                 patch.object(p,"OLD",old),patch.object(p,"TARGET",target), \
+                 patch.object(p,"TARGET",target), \
                  patch.object(p,"LOCK",lock),patch.object(p,"preflight",return_value={"status":"READY_FOR_OWNER_CONFIRMATION"}), \
                  patch.object(p,"verify_stage",return_value=str(old)),patch.object(p,"verify_artifact"), \
                  patch.object(p,"verify_archive_members"), \
@@ -145,7 +171,7 @@ class PublisherNegativeTests(unittest.TestCase):
                 return ""
             def forbidden_switch(*args):switched.append(True)
             with patch.object(p,"STAGE",stage),patch.object(p,"CURRENT",current), \
-                 patch.object(p,"OLD",old),patch.object(p,"TARGET",target), \
+                 patch.object(p,"TARGET",target), \
                  patch.object(p,"LOCK",lock),patch.object(p,"preflight",return_value={"status":"READY_FOR_OWNER_CONFIRMATION"}), \
                  patch.object(p,"verify_stage",return_value=str(old)),patch.object(p,"verify_artifact"), \
                  patch.object(p,"verify_archive_members"), \
@@ -178,7 +204,7 @@ class PublisherNegativeTests(unittest.TestCase):
                     if len(calls)==1:raise p.Blocked("SIMULATED_RESTART_FAILURE")
                 return ""
             with patch.object(p,"STAGE",stage),patch.object(p,"CURRENT",current), \
-                 patch.object(p,"OLD",old),patch.object(p,"TARGET",target), \
+                 patch.object(p,"TARGET",target), \
                  patch.object(p,"LOCK",lock),patch.object(p,"preflight",
                     return_value={"status":"READY_FOR_OWNER_CONFIRMATION"}), \
                  patch.object(p,"verify_stage",return_value=str(old)), \
