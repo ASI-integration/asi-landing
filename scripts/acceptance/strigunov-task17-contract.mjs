@@ -5,6 +5,18 @@ export const DATABASE='strigunov_task11_isolated_lab';
 export const DOMAINS=['booking','physical','cleaning','policy','legal','checkout'];
 export const ORDER=['docs/ops/strigunov-task12-fixture.sql','docs/ops/strigunov-task08-private-schema-DRAFT.sql','docs/ops/strigunov-task11-canonical-fences-DRAFT.sql','docs/ops/strigunov-task13-bootstrap.sql'];
 export const fail=code=>{throw Object.assign(Error(code),{code});};
+// Offline receipt validation only: these assertions grant no execution authority
+// and are not evidence of network isolation or an actual no-send run.
+export function noSendBoundary(receipt){
+ if(!receipt||typeof receipt!=='object'||Array.isArray(receipt))fail('NO_SEND_RECEIPT');
+ for(const [field,expected] of [['phase2','BLOCK'],['p13Wire','BLOCK'],['realAuthority','BLOCK'],['canSend',false]]){
+  if(!Object.hasOwn(receipt,field)||receipt[field]!==expected){
+   // Fixed field names only; never include caller values in failure output.
+   fail({phase2:'NO_SEND_PHASE2',p13Wire:'NO_SEND_P13_WIRE',realAuthority:'NO_SEND_REAL_AUTHORITY',canSend:'NO_SEND_CAN_SEND'}[field]);
+  }
+ }
+ return true;
+}
 export function admission(e,platform){
  ownerGate(e);
  if(platform!=='linux'||e.GITHUB_ACTIONS!=='true'||e.RUNNER_ENVIRONMENT!=='github-hosted'||e.RUNNER_OS!=='Linux')fail('PROVIDER');

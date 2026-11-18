@@ -189,6 +189,93 @@ describe('channel-manager reconciliation route', () => {
     expect(json.confirmationPhraseRequired).toBe(APPLY_CHANNEL_MANAGER_RECONCILIATION_SAFE_REPAIRS);
   });
 
+  it('preserves no-write counts and existing local evidence on repeated synthetic reconciliation', async () => {
+    // Route boundary only: recovery is mocked; no provider or persistence is invoked.
+    const recordedItem = {
+      ...sampleReport.items[0],
+      status: 'applied' as const,
+      appliedAt: '2026-08-07T09:00:00.000Z',
+      safeMessage: 'Local reconciliation evidence already recorded.',
+    };
+    const skippedItem = {
+      ...sampleReport.items[0],
+      id: 'item-2',
+      deterministicActionKey: 'action-2',
+      status: 'skipped' as const,
+      safeMessage: 'Synthetic reconciliation: no upstream write performed.',
+    };
+    const noWriteReport = {
+      ...sampleReport,
+      mode: 'apply' as const,
+      status: 'completed' as const,
+      counts: { applied: 0, skipped: 1, blocked: 0, failed: 0 },
+      repairableCount: 0,
+      items: [recordedItem, skippedItem],
+      safeSummary: 'Synthetic reconciliation: no upstream write performed.',
+    };
+    runChannelManagerReconciliationRecovery
+      .mockResolvedValueOnce(noWriteReport)
+      .mockResolvedValueOnce(noWriteReport);
+    const body = {
+      action: 'apply_safe_repairs',
+      connectionId: 'conn-1',
+      reconciliationRunId: 'recon-1',
+      reportHash: sampleReport.reportHash,
+      confirmationPhrase: APPLY_CHANNEL_MANAGER_RECONCILIATION_SAFE_REPAIRS,
+      snapshot: {
+        snapshotKind: 'complete',
+        asOf: '2026-08-07T12:00:00.000Z',
+        bookings: [],
+        calendar: [],
+        pricing: [],
+      },
+    };
+    const expectedItems = [recordedItem, skippedItem].map((item) => ({
+      id: item.id,
+      category: item.category,
+      severity: item.severity,
+      repairability: item.repairability,
+      status: item.status,
+      externalIdentityHash: item.externalIdentityHash,
+      safeMessage: item.safeMessage,
+      appliedAt: item.appliedAt,
+    }));
+    const responses = [];
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await POST(postBody(body));
+      expect(response.status).toBe(200);
+      const json = await response.json();
+      expect(json.ok).toBe(true);
+      expect(json.message).toBe(noWriteReport.safeSummary);
+      expect(json.report).toMatchObject({
+        runId: 'recon-1',
+        status: 'completed',
+        counts: { applied: 0, skipped: 1, blocked: 0, failed: 0 },
+        // Historical local evidence is not a successful write in this attempt.
+        appliedCount: 1,
+        skippedCount: 1,
+        blockedCount: 0,
+        failedCount: 0,
+        categorySummaries: { booking_missing_internal: 2 },
+      });
+      expect(json.report.items).toEqual(expectedItems);
+      responses.push(json);
+    }
+    expect(responses[1]).toEqual(responses[0]);
+    expect(noWriteReport.items).toEqual([recordedItem, skippedItem]);
+    expect(runChannelManagerReconciliationRecovery).toHaveBeenCalledTimes(2);
+    for (const call of runChannelManagerReconciliationRecovery.mock.calls) {
+      expect(call).toEqual([{
+        connectionId: body.connectionId,
+        reconciliationRunId: body.reconciliationRunId,
+        reportHash: body.reportHash,
+        confirmationPhrase: body.confirmationPhrase,
+        snapshot: body.snapshot,
+      }]);
+    }
+    expect(runChannelManagerReconciliationPreview).not.toHaveBeenCalled();
+  });
+
   it('get_status action', async () => {
     const response = await POST(postBody({
       action: 'get_status',

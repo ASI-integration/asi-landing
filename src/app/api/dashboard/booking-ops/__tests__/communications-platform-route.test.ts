@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   prepare: vi.fn(),
   scope: vi.fn(),
   requireAccess: vi.fn(),
+  syncCommunications: vi.fn(),
+  syncIntake: vi.fn(),
 }));
 
 vi.mock('@/lib/crm/api-auth', () => ({
@@ -26,7 +28,7 @@ vi.mock('@/lib/platform/residential-booking-scope', () => ({
 
 vi.mock('@/lib/booking-ops/communication-orchestrator', () => ({
   listBookingOpsCommunicationsForRecord: mocks.list,
-  syncBookingOpsCommunications: vi.fn(),
+  syncBookingOpsCommunications: mocks.syncCommunications,
 }));
 
 vi.mock('@/lib/communication/booking-knowledge-boundary', () => ({
@@ -42,7 +44,7 @@ vi.mock('@/lib/booking-ops/tasks', () => ({
 }));
 
 vi.mock('@/lib/booking-ops/guest-intake-autopilot', () => ({
-  syncGuestIntakeAutopilot: vi.fn(),
+  syncGuestIntakeAutopilot: mocks.syncIntake,
 }));
 
 const now = () => new Date().toISOString();
@@ -171,6 +173,83 @@ describe('Booking Ops communications PlatformDecision GET', () => {
     expect(payload.message).toBe('Нет доступа к бронированию.');
     expect(mocks.list).not.toHaveBeenCalled();
     expect(mocks.prepare).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('keeps synthetic staging reads no-send when account scope changes: %s', async (scopeChanges) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T12:00:00.000Z'));
+    const outbound = vi.fn(() => {
+      throw new Error('Unexpected outbound request in synthetic no-send test');
+    });
+    vi.stubGlobal('fetch', outbound);
+
+    try {
+      mocks.list.mockResolvedValue({
+        ok: true,
+        communications: [intent('guest', 'synthetic-staging-communication')],
+      });
+      if (scopeChanges) {
+        mocks.scope.mockResolvedValueOnce({
+          kind: 'identified',
+          accountId: 'account-1',
+          propertyId: 'property-1',
+          bookingId: 'ops-route',
+        }).mockResolvedValueOnce({
+          kind: 'identified',
+          accountId: 'foreign-account',
+          propertyId: 'foreign-property',
+          bookingId: 'ops-route',
+        });
+      }
+
+      const route = await import('../[id]/communications/route');
+      const response = await route.GET(new Request('https://asi.test'), {
+        params: { id: 'ops-route' },
+      });
+      const payload = await response.json();
+
+      expect(mocks.scope.mock.calls).toEqual([
+        ['ops-route', 'account-1'],
+        ['ops-route', 'account-1'],
+      ]);
+      expect(mocks.list.mock.calls).toEqual([['ops-route']]);
+      expect(mocks.prepare.mock.calls).toEqual([[{
+        recordId: 'ops-route',
+        accountId: 'account-1',
+        propertyId: 'property-1',
+        purpose: 'request_arrival_time',
+      }]]);
+      expect(mocks.syncCommunications).not.toHaveBeenCalled();
+      expect(mocks.syncIntake).not.toHaveBeenCalled();
+      expect(outbound).not.toHaveBeenCalled();
+
+      if (scopeChanges) {
+        expect(response.status).toBe(409);
+        expect(payload).toEqual({
+          ok: false,
+          message: 'Состояние бронирования изменилось. Повторите запрос.',
+        });
+      } else {
+        expect(response.status).toBe(200);
+        expect(payload.ok).toBe(true);
+        expect(payload.platformDecisions).toHaveLength(1);
+        expect(payload.platformDecisions[0].decision).toMatchObject({
+          identity: {
+            accountId: 'account-1',
+            propertyId: 'property-1',
+            bookingId: 'ops-route',
+          },
+          permission: { automaticActionAllowed: false },
+        });
+        expect(payload.platformDecisions[0].decision.permission.allowedActions)
+          .toEqual(['prepare_operator_draft']);
+        expect(payload.platformDecisions[0].decision.permission.forbiddenActions)
+          .toContain('send_guest_automatically');
+      }
+    } finally {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
   });
 
   it('returns an unavailable advisory decision when authoritative facts cannot be resolved', async () => {
