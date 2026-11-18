@@ -54,7 +54,7 @@ BEGIN
     RAISE EXCEPTION 'service_role_required' USING ERRCODE = '42501';
   END IF;
   SELECT * INTO b FROM public.booking_ops_records
-   WHERE id=p_booking_id AND account_id=p_account_id AND property_id=p_property_id
+   WHERE id=p_booking_id AND account_id=p_account_id::text AND property_id=p_property_id::text
    FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'booking_scope_mismatch' USING ERRCODE='42501'; END IF;
   SELECT * INTO old_report FROM public.owner_payout_reports WHERE booking_id=p_booking_id;
