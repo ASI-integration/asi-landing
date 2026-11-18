@@ -171,6 +171,73 @@ export function collapseChannelCalendarConflicts(
   return conflicts;
 }
 
+export type SyntheticReservationStay = {
+  id: string;
+  accountId: string;
+  propertyId: string;
+  dateFrom: string;
+  dateTo: string;
+};
+
+export type SyntheticCalendarNight = {
+  id: string;
+  accountId: string;
+  propertyId: string;
+  date: string;
+};
+
+function orderedStay(dateFrom: unknown, dateTo: unknown): { dateFrom: string; dateTo: string } | null {
+  const from = normalizeAvailabilityDate(dateFrom);
+  const to = normalizeAvailabilityDate(dateTo);
+  if (!from || !to || from === to) return null;
+  return from < to ? { dateFrom: from, dateTo: to } : { dateFrom: to, dateTo: from };
+}
+
+/**
+ * In-memory guard for synthetic stays and calendar nights.
+ * Overlap uses the half-open `rangesOverlap` rule. Calendar nights are collapsed
+ * with `collapseChannelCalendarConflicts`. Other accounts and other properties are ignored.
+ * This does not create holds or call a channel manager.
+ */
+export function evaluateSyntheticAvailabilityConflicts(input: {
+  accountId: string;
+  propertyId: string;
+  dateFrom: string;
+  dateTo: string;
+  reservations: readonly SyntheticReservationStay[];
+  calendarNights?: readonly SyntheticCalendarNight[];
+}): { status: AvailabilityConflictStatus; conflicts: AvailabilityConflict[] } {
+  const accountId = text(input.accountId);
+  const propertyId = text(input.propertyId);
+  const requested = orderedStay(input.dateFrom, input.dateTo);
+  if (!accountId || !propertyId || !requested) {
+    return { status: 'missing_data', conflicts: [] };
+  }
+
+  const stayConflicts: AvailabilityConflict[] = [];
+  for (const reservation of input.reservations) {
+    if (text(reservation.accountId) !== accountId) continue;
+    if (text(reservation.propertyId) !== propertyId) continue;
+    const stay = orderedStay(reservation.dateFrom, reservation.dateTo);
+    if (!stay) continue;
+    if (!rangesOverlap(stay.dateFrom, stay.dateTo, requested.dateFrom, requested.dateTo)) continue;
+    const id = text(reservation.id);
+    if (!id) continue;
+    stayConflicts.push({ type: 'booking', id, severity: 'confirmed' });
+  }
+  stayConflicts.sort((a, b) => a.id.localeCompare(b.id));
+
+  const nights = (input.calendarNights ?? [])
+    .filter((night) => text(night.accountId) === accountId && text(night.propertyId) === propertyId)
+    .filter((night) => {
+      const date = normalizeAvailabilityDate(night.date);
+      return Boolean(date && date >= requested.dateFrom && date < requested.dateTo);
+    })
+    .map((night) => ({ id: text(night.id), date: night.date }));
+  const conflicts = [...stayConflicts, ...collapseChannelCalendarConflicts(nights)];
+  return { status: classifyAvailabilityConflicts(conflicts), conflicts };
+}
+
 function collectChannelCalendarConflicts(
   calendar: ChannelCalendarSnapshotRow[] | null | undefined,
   imported: ChannelImportedBookingRow[] | null | undefined,
