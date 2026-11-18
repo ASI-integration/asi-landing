@@ -1,14 +1,10 @@
--- NON-EXECUTABLE MIGRATION TEMPLATE (.sql.template): never load into psql,
--- Supabase SQL Editor or migration runner without separate DB-security approval.
--- Existing function is ALREADY DEPLOYED to a SHARED staging/production DB.
--- SOURCE CANDIDATE ONLY: this is NOT permission to reapply the SQL to the
--- SHARED Supabase database. Read-only inspection on 2026-11-18 confirms the
--- original function already exists and the exact fixture was already marked
--- with one no-send audit event. Verify current DB definition independently.
--- Do not invoke the RPC or enable the API until DB/security review and rollback.
--- SECURITY INVOKER. This template grants EXECUTE to no role.
--- A separate owner-reviewed DB rollout must configure a least-privileged
--- function caller. This source does not change the existing shared DB function.
+-- SOURCE-ONLY G2 acceptance fixture SQL candidate; DO NOT APPLY to shared DB.
+-- The shared Supabase database has a working FOUR-argument function today.
+-- This transaction intentionally removes that overload. Require an approved
+-- administrator change window, a PRIVATE backup of pg_get_functiondef/ACL,
+-- and isolated PostgreSQL integration tests before any DB modification.
+-- Activation is an opt-in postgres-only transaction gate, not a staging check.
+-- Never enable the dependent API until the migration and rollback are verified.
 -- Allowed record/account/property IDs are mandatory UUID inputs supplied by
 -- a staging-only, separately reviewed, server-side configuration.
 -- Arguments themselves are NOT an independent trust boundary: only a
@@ -18,11 +14,18 @@
 -- booking_ops_events(booking_ops_record_id, dedupe_key) for non-null dedupe keys;
 -- combined with the booking_ops_records FOR UPDATE lock, it prevents duplicate
 -- same-record acceptance audit insertions. Do not assume the index elsewhere.
-ASI_FIXTURE_NOT_SQL_UNTIL_SEPARATE_OWNER_DB_REVIEW;
--- This intentional invalid SQL statement MUST be removed only by a separately
--- audited renderer after verifying exact synthetic IDs and a rollback plan.
--- Running this source file directly fails before CREATE OR REPLACE FUNCTION.
 BEGIN;
+-- Explicit manual activation guard; evaluated before any destructive DDL.
+DO $migration_gate$
+BEGIN
+  IF current_user IS DISTINCT FROM 'postgres'
+     OR current_setting('asi.acceptance_fixture_migration_authorized', true)
+        IS DISTINCT FROM 'YES' THEN
+    RAISE EXCEPTION 'FIXTURE_MIGRATION_NOT_AUTHORIZED';
+  END IF;
+END $migration_gate$;
+-- No CASCADE: abort transaction if the old RPC still has dependencies.
+DROP FUNCTION IF EXISTS public.asi_mark_acceptance_fixture(uuid,text,text,text);
 CREATE OR REPLACE FUNCTION public.asi_mark_acceptance_fixture(
   p_record_id uuid, p_account_id text, p_property_id text, p_actor_id text,
   p_allowed_record_id uuid, p_allowed_account_id uuid, p_allowed_property_id uuid
@@ -30,6 +33,9 @@ CREATE OR REPLACE FUNCTION public.asi_mark_acceptance_fixture(
 DECLARE
   v public.booking_ops_records%ROWTYPE;
 BEGIN
+  IF current_user NOT IN ('postgres', 'service_role') THEN
+    RAISE EXCEPTION 'FORBIDDEN_ROLE';
+  END IF;
   IF p_record_id IS NULL OR p_allowed_record_id IS NULL
      OR p_allowed_account_id IS NULL OR p_allowed_property_id IS NULL
      OR nullif(trim(p_account_id),'') IS NULL
@@ -129,10 +135,9 @@ BEGIN
     'acceptance-fixture:'||p_record_id::text);
   RETURN true;
 END $$;
+-- Default PUBLIC EXECUTE must be revoked before commit.
 REVOKE ALL ON FUNCTION public.asi_mark_acceptance_fixture(uuid,text,text,text,uuid,uuid,uuid)
-  FROM PUBLIC, anon, authenticated, service_role;
--- The existing FOUR-argument RPC is NOT replaced by this SEVEN-argument
--- candidate. The old overload must be audited/retired in a separate rollout;
--- do not interpret this template as revoking its existing grants.
--- NO EXECUTE GRANT. A separate approved activation step is mandatory.
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.asi_mark_acceptance_fixture(uuid,text,text,text,uuid,uuid,uuid)
+  TO service_role;
 COMMIT;

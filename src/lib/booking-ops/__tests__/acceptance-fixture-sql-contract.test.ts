@@ -2,15 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const candidate = resolve(process.cwd(), 'scripts/acceptance/sql/asi-acceptance-fixture-candidate.sql.template');
+const candidate = resolve(process.cwd(), 'scripts/acceptance/sql/asi-acceptance-fixture-candidate.sql');
 const sql = readFileSync(candidate, 'utf8');
 
 describe('single-row SQL acceptance fixture: fail-closed source contract', () => {
-  it('is a source-only template, not an automatically executable .sql migration', () => {
-    expect(existsSync(candidate.replace(/\.template$/, ''))).toBe(false);
-    expect(sql).toContain('NON-EXECUTABLE MIGRATION TEMPLATE');
-    expect(sql).toContain('ASI_FIXTURE_NOT_SQL_UNTIL_SEPARATE_OWNER_DB_REVIEW;');
-    expect(sql).toContain('SHARED staging/production DB');
+  it('requires explicit postgres-only approval before dropping the old overload', () => {
+    expect(existsSync(candidate)).toBe(true);
+    expect(sql).toContain("current_setting('asi.acceptance_fixture_migration_authorized', true)");
+    expect(sql).toContain("RAISE EXCEPTION 'FIXTURE_MIGRATION_NOT_AUTHORIZED'");
+    expect(sql).toContain('DROP FUNCTION IF EXISTS public.asi_mark_acceptance_fixture(uuid,text,text,text);');
+    expect(sql.indexOf('FIXTURE_MIGRATION_NOT_AUTHORIZED')).toBeLessThan(sql.indexOf('DROP FUNCTION IF EXISTS'));
+    expect(sql).not.toContain('DROP FUNCTION IF EXISTS public.asi_mark_acceptance_fixture(uuid,text,text,text) CASCADE');
   });
 
   it('rejects every record, account or property except the three exact owner pins', () => {
@@ -64,9 +66,20 @@ describe('single-row SQL acceptance fixture: fail-closed source contract', () =>
     expect(sql).toContain("RAISE EXCEPTION 'fixture_dedupe_unique_index_required'");
     expect(sql).toContain('FOR UPDATE;');
     expect(sql).toContain('SECURITY INVOKER');
-    expect(sql).not.toContain('GRANT EXECUTE ON FUNCTION');
-    expect(sql).toContain('FROM PUBLIC, anon, authenticated, service_role;');
+    expect(sql).toContain('REVOKE ALL ON FUNCTION public.asi_mark_acceptance_fixture');
+    expect(sql).toContain('FROM PUBLIC, anon, authenticated;');
+    expect(sql).toContain('GRANT EXECUTE ON FUNCTION public.asi_mark_acceptance_fixture');
+    expect(sql).toContain('TO service_role;');
+    expect(sql).toContain("IF current_user NOT IN ('postgres', 'service_role') THEN");
+    expect(sql).toContain("RAISE EXCEPTION 'FORBIDDEN_ROLE'");
     expect(sql).toContain('(uuid,text,text,text,uuid,uuid,uuid)');
-    expect(sql).toContain('old overload must be audited/retired'.replace('old', 'old'));
   });
+  it('has an exact gated rollback and discloses the old-overload restore requirement', () => {
+    const rollback = readFileSync(resolve(process.cwd(), 'scripts/acceptance/sql/asi-acceptance-fixture-rollback.sql'), 'utf8');
+    expect(rollback).toContain("RAISE EXCEPTION 'FIXTURE_ROLLBACK_NOT_AUTHORIZED'");
+    expect(rollback).toContain('DROP FUNCTION IF EXISTS public.asi_mark_acceptance_fixture(uuid,text,text,text,uuid,uuid,uuid);');
+    expect(rollback).toContain('DOES NOT RECREATE the old FOUR-argument overload');
+    expect(rollback).not.toContain(' CASCADE');
+  });
+
 });
