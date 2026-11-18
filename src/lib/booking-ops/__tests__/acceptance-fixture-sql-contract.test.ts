@@ -9,14 +9,15 @@ describe('single-row SQL acceptance fixture: fail-closed source contract', () =>
   it('is a source-only template, not an automatically executable .sql migration', () => {
     expect(existsSync(candidate.replace(/\.template$/, ''))).toBe(false);
     expect(sql).toContain('NON-EXECUTABLE MIGRATION TEMPLATE');
+    expect(sql).toContain('ASI_FIXTURE_NOT_SQL_UNTIL_SEPARATE_OWNER_DB_REVIEW;');
     expect(sql).toContain('SHARED staging/production DB');
   });
 
   it('rejects every record, account or property except the three exact owner pins', () => {
     const ids = [
-      "p_record_id IS DISTINCT FROM '5477f7dd-2d60-4a3d-9212-c74e8d36119e'::uuid",
-      "p_account_id IS DISTINCT FROM '9623421a-3b3d-4331-b126-8ca63c5611f1'",
-      "p_property_id IS DISTINCT FROM '0bc3d3dd-678c-4d42-b1a1-d9cce39d53ac'",
+      "p_record_id IS DISTINCT FROM '__OWNER_PINNED_SYNTHETIC_RECORD_UUID__'::uuid",
+      "p_account_id IS DISTINCT FROM '__OWNER_PINNED_SYNTHETIC_ACCOUNT_UUID__'",
+      "p_property_id IS DISTINCT FROM '__OWNER_PINNED_SYNTHETIC_PROPERTY_UUID__'",
     ];
     for (const id of ids) expect(sql).toContain(id);
     const first = sql.indexOf(ids[0]);
@@ -56,7 +57,7 @@ describe('single-row SQL acceptance fixture: fail-closed source contract', () =>
     expect(sql).toContain("RAISE EXCEPTION 'fixture_dedupe_unique_index_required'");
     expect(sql).toContain('FOR UPDATE;');
     expect(sql).toContain('SECURITY INVOKER');
-    expect(sql).toContain('FROM PUBLIC, anon, authenticated;');
-    expect(sql).toContain('TO service_role;');
+    expect(sql).not.toContain('GRANT EXECUTE ON FUNCTION');
+    expect(sql).toContain('FROM PUBLIC, anon, authenticated, service_role;');
   });
 });

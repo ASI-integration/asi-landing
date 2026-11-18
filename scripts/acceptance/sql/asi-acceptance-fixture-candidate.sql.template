@@ -6,14 +6,18 @@
 -- original function already exists and the exact fixture was already marked
 -- with one no-send audit event. Verify current DB definition independently.
 -- Do not invoke the RPC or enable the API until DB/security review and rollback.
--- The function is SECURITY INVOKER; only the server-side service_role can EXECUTE.
--- Because service_role bypasses RLS, the API must separately prove admin access,
--- exact record/account/property scope, and all staging no-send flags.
+-- SECURITY INVOKER. This template grants EXECUTE to no role.
+-- A separate owner-reviewed DB rollout must configure a least-privileged
+-- function caller. This source does not change the existing shared DB function.
 -- The record pin intentionally prevents modifying arbitrary booking records.
 -- Verified in the connected shared DB: a UNIQUE index exists on
 -- booking_ops_events(booking_ops_record_id, dedupe_key) for non-null dedupe keys;
 -- combined with the booking_ops_records FOR UPDATE lock, it prevents duplicate
 -- same-record acceptance audit insertions. Do not assume the index elsewhere.
+ASI_FIXTURE_NOT_SQL_UNTIL_SEPARATE_OWNER_DB_REVIEW;
+-- This intentional invalid SQL statement MUST be removed only by a separately
+-- audited renderer after verifying exact synthetic IDs and a rollback plan.
+-- Running this source file directly fails before CREATE OR REPLACE FUNCTION.
 BEGIN;
 CREATE OR REPLACE FUNCTION public.asi_mark_acceptance_fixture(
   p_record_id uuid, p_account_id text, p_property_id text, p_actor_id text
@@ -28,9 +32,9 @@ BEGIN
   -- Fail CLOSED before any row access for every non-fixture record/tenant/property.
   -- All three values are exact and immutable for this single source candidate:
   -- no other account, property or booking-ops record can ever be marked.
-  IF p_record_id IS DISTINCT FROM '5477f7dd-2d60-4a3d-9212-c74e8d36119e'::uuid
-     OR p_account_id IS DISTINCT FROM '9623421a-3b3d-4331-b126-8ca63c5611f1'
-     OR p_property_id IS DISTINCT FROM '0bc3d3dd-678c-4d42-b1a1-d9cce39d53ac' THEN
+  IF p_record_id IS DISTINCT FROM '__OWNER_PINNED_SYNTHETIC_RECORD_UUID__'::uuid
+     OR p_account_id IS DISTINCT FROM '__OWNER_PINNED_SYNTHETIC_ACCOUNT_UUID__'
+     OR p_property_id IS DISTINCT FROM '__OWNER_PINNED_SYNTHETIC_PROPERTY_UUID__' THEN
     RAISE EXCEPTION 'fixture_record_not_owner_pinned';
   END IF;
   -- The receipt is only safe if the unique dedupe constraint is present.
@@ -117,7 +121,6 @@ BEGIN
   RETURN true;
 END $$;
 REVOKE ALL ON FUNCTION public.asi_mark_acceptance_fixture(uuid,text,text,text)
-  FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.asi_mark_acceptance_fixture(uuid,text,text,text)
-  TO service_role;
+  FROM PUBLIC, anon, authenticated, service_role;
+-- NO EXECUTE GRANT. A separate approved activation step is mandatory.
 COMMIT;

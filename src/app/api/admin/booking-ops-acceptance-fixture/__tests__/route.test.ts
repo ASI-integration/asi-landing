@@ -18,9 +18,9 @@ vi.mock('@/lib/booking-ops/repository', () => ({
 vi.mock('@/lib/supabase', () => ({ supabase: { rpc: mocks.rpc } }));
 import { POST } from '../route';
 
-const PINNED = '5477f7dd-2d60-4a3d-9212-c74e8d36119e';
-const OWNER_ACCOUNT = '9623421a-3b3d-4331-b126-8ca63c5611f1';
-const OWNER_PROPERTY = '0bc3d3dd-678c-4d42-b1a1-d9cce39d53ac';
+const PINNED = '11111111-1111-4111-8111-111111111111';
+const OWNER_ACCOUNT = '22222222-2222-4222-8222-222222222222';
+const OWNER_PROPERTY = '33333333-3333-4333-8333-333333333333';
 const APP = 'https://staging.example.test';
 const body = () => ({
   bookingOpsRecordId: PINNED, confirm: true, noSend: true,
