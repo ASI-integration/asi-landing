@@ -485,6 +485,8 @@ jobs:
     name: channel-manager-recovery-postgres
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # No GitHub API privileges in this job: PR SQL is untrusted test input.
+    permissions: {}
     services:
       postgres:
         image: postgres:16
@@ -578,7 +580,7 @@ jobs:
           const proof = JSON.parse(line.slice(line.indexOf('ASI_FIXTURE_PG_PROOF') +
             'ASI_FIXTURE_PG_PROOF'.length).trim());
           const required = ['realRpc','wrongTenantDenied','nonsyntheticDenied',
-            'wrongRecordDenied','oneAuditOnly','oldOverloadReplaced',
+            'wrongRecordDenied','postgresDenied','oneAuditOnly','oldOverloadReplaced',
             'noPublicExecute','rollback'];
           if (!required.every(k=>proof[k]===true) || proof.sharedDbTouched!==false) {
             console.error('G2 PostgreSQL fixture proof mismatch',proof);

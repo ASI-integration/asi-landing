@@ -32,8 +32,9 @@ CREATE OR REPLACE FUNCTION public.asi_mark_acceptance_fixture(
 ) RETURNS boolean LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
 DECLARE
   v public.booking_ops_records%ROWTYPE;
+  v_dedupe_key text;
 BEGIN
-  IF current_user NOT IN ('postgres', 'service_role') THEN
+  IF current_user IS DISTINCT FROM 'service_role' THEN
     RAISE EXCEPTION 'FORBIDDEN_ROLE';
   END IF;
   IF p_record_id IS NULL OR p_allowed_record_id IS NULL
@@ -52,6 +53,7 @@ BEGIN
      OR p_property_id::uuid IS DISTINCT FROM p_allowed_property_id THEN
     RAISE EXCEPTION 'fixture_record_not_owner_pinned';
   END IF;
+  v_dedupe_key := format('acceptance-fixture:%s', p_record_id);
   -- The receipt is only safe if the unique dedupe constraint is present.
   IF NOT EXISTS (
       SELECT 1 FROM pg_catalog.pg_index i
@@ -94,7 +96,7 @@ BEGIN
             IS DISTINCT FROM 'owner_scoped_staging_fixture'
        OR NOT EXISTS (SELECT 1 FROM public.booking_ops_events
          WHERE booking_ops_record_id=p_record_id
-           AND dedupe_key='acceptance-fixture:'||p_record_id::text
+           AND dedupe_key=v_dedupe_key
            AND metadata->>'no_send'='true'
            AND metadata->>'synthetic_only'='true'
            AND metadata->>'account_id'=p_account_id
@@ -114,7 +116,7 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM public.booking_ops_events
     WHERE booking_ops_record_id=p_record_id
-      AND dedupe_key='acceptance-fixture:'||p_record_id::text) THEN
+      AND dedupe_key=v_dedupe_key) THEN
     RAISE EXCEPTION 'fixture_audit_already_exists';
   END IF;
 
@@ -132,7 +134,7 @@ BEGIN
     'Account-scoped staging only; external transports disabled',
     'admin',jsonb_build_object('actor_id',p_actor_id,'account_id',p_account_id,
       'property_id',p_property_id,'no_send',true,'synthetic_only',true),
-    'acceptance-fixture:'||p_record_id::text);
+    v_dedupe_key);
   RETURN true;
 END $$;
 -- Default PUBLIC EXECUTE must be revoked before commit.

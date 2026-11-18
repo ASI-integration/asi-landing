@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { performance } from 'node:perf_hooks';
 
 const mocks = vi.hoisted(() => ({
   requireOpsAdminSession: vi.fn(),
@@ -22,22 +23,26 @@ const PINNED = '11111111-1111-4111-8111-111111111111';
 const OWNER_ACCOUNT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const OWNER_PROPERTY = '33333333-3333-4333-8333-333333333333';
 const APP = 'https://staging.example.test';
+const PROOF = 'ASI_FIXTURE_UNIT_TEST_PROOF_TOKEN_000000000000';
+let monotonicMs = 10000000000;
 const body = () => ({
   bookingOpsRecordId: PINNED, confirm: true, noSend: true,
   acknowledgeSyntheticOnly: true,
 });
 const request = (payload: unknown = body(), origin = APP) => new Request(APP + '/api/admin/booking-ops-acceptance-fixture', {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json', Origin: origin, 'Sec-Fetch-Site': 'same-origin' },
+  headers: { 'Content-Type': 'application/json', Origin: origin, 'Sec-Fetch-Site': 'same-origin', 'x-asi-fixture-csrf-token': PROOF },
   body: JSON.stringify(payload),
 });
 
 describe('owner-scoped staging acceptance fixture authorization', () => {
   let testClockIndex = 0;
   beforeEach(() => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date(2026, 10, 18, 12, 0, 0).getTime() + (++testClockIndex) * 61_000);
     vi.resetAllMocks();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    monotonicMs += 61000;
+    vi.spyOn(performance, 'now').mockImplementation(() => monotonicMs);
+    vi.setSystemTime(new Date(2026, 10, 18, 12, 0, 0).getTime() + (++testClockIndex) * 61_000);
     for (const [k, v] of Object.entries({
       NODE_ENV: 'production',
       ASI_DEPLOYMENT_TIER: 'staging',
@@ -56,6 +61,7 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
       OPS_ACCEPTANCE_FIXTURE_ALLOWED_PROPERTY_ID: OWNER_PROPERTY,
       OPS_ACCEPTANCE_FIXTURE_RPC_V2_VERIFIED: 'YES',
       NEXT_PUBLIC_APP_URL: APP,
+      OPS_ACCEPTANCE_FIXTURE_CSRF_TOKEN: PROOF,
     })) vi.stubEnv(k, v);
     mocks.requireOpsAdminSession.mockResolvedValue({ session: { userId: 'actor-a' } });
     mocks.requireBookingOpsRouteAccess.mockResolvedValue({
@@ -68,6 +74,7 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('marks only the owner-pinned record and persists through atomic audited RPC', async () => {
@@ -95,7 +102,7 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
     expect(response.headers.get('Retry-After')).toMatch(/^[1-9][0-9]*$/);
     expect(await response.json()).toMatchObject({ ok: false, message: 'too_many_requests' });
     expect(mocks.rpc).toHaveBeenCalledTimes(5);
-    vi.setSystemTime(Date.now() + 60_001);
+    monotonicMs += 60001;
     expect((await POST(request())).status).toBe(200);
     expect(mocks.rpc).toHaveBeenCalledTimes(6);
   });
@@ -109,6 +116,29 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
       : 'OPS_ACCEPTANCE_FIXTURE_ALLOWED_PROPERTY_ID', value);
     expect((await POST(request())).status).toBe(403);
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('requires separately provisioned non-cookie operator request proof', async () => {
+    const req = new Request(APP + '/api/admin/booking-ops-acceptance-fixture', {
+      method: 'POST', headers: { 'Content-Type': 'application/json',
+        Origin: APP, 'Sec-Fetch-Site': 'same-origin' },
+      body: JSON.stringify(body()),
+    });
+    expect((await POST(req)).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('rejects missing operator secret even for a valid admin session', async () => {
+    vi.stubEnv('OPS_ACCEPTANCE_FIXTURE_CSRF_TOKEN', '');
+    expect((await POST(request())).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('uses monotonic time for rate limit despite large wall-clock jumps', async () => {
+    for (let i = 0; i < 5; i += 1) expect((await POST(request())).status).toBe(200);
+    vi.setSystemTime(new Date(2035, 1, 1));
+    expect((await POST(request())).status).toBe(429);
+    vi.setSystemTime(new Date(2001, 1, 1));
+    expect((await POST(request())).status).toBe(429);
+    monotonicMs += 60001;
+    expect((await POST(request())).status).toBe(200);
   });
   it('rejects malformed UUID returned by real scope authorization before RPC', async () => {
     mocks.requireBookingOpsRouteAccess.mockResolvedValueOnce({

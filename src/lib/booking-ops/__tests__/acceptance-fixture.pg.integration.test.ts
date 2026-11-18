@@ -12,7 +12,7 @@ const isolated = (() => {
     return ['postgresql:','postgres:'].includes(u.protocol)
       && ['localhost','127.0.0.1'].includes(u.hostname)
       && u.port==='5432' && u.pathname==='/asi_recovery_test'
-      && u.username==='postgres' && !u.search && !u.hash;
+      && Boolean(u.username) && !u.search && !u.hash;
   } catch { return false; }
 })();
 describe('G2 fixture real PostgreSQL SQL and tenant-isolation integration', () => {
@@ -80,10 +80,12 @@ describe('G2 fixture real PostgreSQL SQL and tenant-isolation integration', () =
        has_function_privilege('authenticated','`+signature+`','EXECUTE') AS auth,
        has_function_privilege('service_role','`+signature+`','EXECUTE') AS service`);
      expect(acl.rows[0]).toMatchObject({old_gone:true,anon:false,auth:false,service:true});
+     const args=[rec,account,property,'actor',rec,account,property];
+     // The migration owner (postgres) must NOT be allowed to invoke the RPC.
+     await reject(args,'FORBIDDEN_ROLE');
      await run('GRANT SELECT,UPDATE ON public.booking_ops_records TO service_role');
      await run('GRANT SELECT,INSERT ON public.booking_ops_events TO service_role');
      await run('SET LOCAL ROLE service_role');
-     const args=[rec,account,property,'actor',rec,account,property];
      expect((await run(call,args)).rows[0].result).toBe(true);
      expect((await run(call,args)).rows[0].result).toBe(true);
      await reject([rec,other,property,'actor',rec,other,property],'fixture_tenant_scope_not_found');
@@ -95,7 +97,7 @@ describe('G2 fixture real PostgreSQL SQL and tenant-isolation integration', () =
      expect((await run(`SELECT to_regprocedure('`+signature+`') IS NULL AS absent`)).rows[0].absent).toBe(true);
      console.log('ASI_FIXTURE_PG_PROOF '+JSON.stringify({
        realRpc:true,wrongTenantDenied:true,nonsyntheticDenied:true,
-       wrongRecordDenied:true,oneAuditOnly:true,oldOverloadReplaced:true,
+       wrongRecordDenied:true,postgresDenied:true,oneAuditOnly:true,oldOverloadReplaced:true,
        noPublicExecute:true,rollback:true,sharedDbTouched:false,
      }));
    }finally{

@@ -65,12 +65,14 @@ describe('single-row SQL acceptance fixture: fail-closed source contract', () =>
     expect(sql).toContain('i.indisunique AND i.indisvalid AND i.indisready');
     expect(sql).toContain("RAISE EXCEPTION 'fixture_dedupe_unique_index_required'");
     expect(sql).toContain('FOR UPDATE;');
+    expect(sql).toContain("v_dedupe_key := format('acceptance-fixture:%s', p_record_id)");
+    expect(sql).not.toContain("'acceptance-fixture:'||p_record_id::text");
     expect(sql).toContain('SECURITY INVOKER');
     expect(sql).toContain('REVOKE ALL ON FUNCTION public.asi_mark_acceptance_fixture');
     expect(sql).toContain('FROM PUBLIC, anon, authenticated;');
     expect(sql).toContain('GRANT EXECUTE ON FUNCTION public.asi_mark_acceptance_fixture');
     expect(sql).toContain('TO service_role;');
-    expect(sql).toContain("IF current_user NOT IN ('postgres', 'service_role') THEN");
+    expect(sql).toContain("IF current_user IS DISTINCT FROM 'service_role' THEN");
     expect(sql).toContain("RAISE EXCEPTION 'FORBIDDEN_ROLE'");
     expect(sql).toContain('(uuid,text,text,text,uuid,uuid,uuid)');
   });
