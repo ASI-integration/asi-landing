@@ -1,0 +1,47 @@
+{
+  "currentStage": 2,
+  "facts": {
+    "pr658Merged": true,
+    "pr664Merged": true,
+    "pr665Merged": false,
+    "pr669Merged": true
+  },
+  "header": {
+    "reason": "Завершить обязательные проверки перед выпуском",
+    "state": "owner"
+  },
+  "health": {
+    "stagingAlive": true,
+    "verifiedAutonomous": false
+  },
+  "schema": "asi.ops-map.v1",
+  "source": {
+    "branch": "asi/ops-map-live",
+    "mainSha": "c1746cc8e199a0ad9d3598b37d2fa952fea8e214",
+    "repository": "ASI-integration/asi-landing"
+  },
+  "stages": [
+    {
+      "detail": "Ядро, база и исполнители подключены",
+      "percent": 100
+    },
+    {
+      "detail": "Проверки и сборка готовятся к выпуску",
+      "percent": 95
+    },
+    {
+      "detail": "Тест: обращение, бронь, документы, уборка, отчёт",
+      "percent": 0
+    },
+    {
+      "detail": "Реальные объекты ещё не запущены",
+      "percent": 0
+    },
+    {
+      "detail": "Новые направления пока в планах",
+      "percent": 0
+    }
+  ],
+  "summary": "Выпущено 3 из 4 ключевых изменений. Готовим финальный выпуск конвейера.",
+  "updatedAt": "2026-11-18T13:11:19.507908+00:00"
+}
