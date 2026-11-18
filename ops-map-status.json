@@ -1,16 +1,16 @@
 {
-  "currentStage": 2,
+  "currentStage": 3,
   "facts": {
-    "lastClosedAt": "2026-11-18T12:05:52Z",
+    "lastClosedAt": "2026-11-18T13:35:14Z",
     "lastClosedMerged": true,
-    "lastClosedPr": 664,
+    "lastClosedPr": 665,
     "pr658Merged": true,
     "pr664Merged": true,
-    "pr665Merged": false,
+    "pr665Merged": true,
     "pr669Merged": true
   },
   "header": {
-    "reason": "Подтвердить безопасное включение тестового стенда после выпуска",
+    "reason": "Подтвердить безопасный запуск и полный тест аренды",
     "state": "owner"
   },
   "health": {
@@ -20,7 +20,7 @@
   "schema": "asi.ops-map.v1",
   "source": {
     "branch": "asi/ops-map-live",
-    "mainSha": "c1746cc8e199a0ad9d3598b37d2fa952fea8e214",
+    "mainSha": "de34181312b4efe58c3b857ebe63e6fe8fb12bfc",
     "repository": "ASI-integration/asi-landing"
   },
   "stages": [
@@ -29,8 +29,8 @@
       "percent": 100
     },
     {
-      "detail": "Проверки и сборка готовятся к выпуску",
-      "percent": 95
+      "detail": "Проверенный конвейер собран",
+      "percent": 100
     },
     {
       "detail": "Тест: обращение, бронь, документы, уборка, отчёт",
@@ -45,6 +45,6 @@
       "percent": 0
     }
   ],
-  "summary": "Выпущено 3 из 4 ключевых изменений. Готовим финальный выпуск конвейера.",
-  "updatedAt": "2026-11-18T13:18:12.884836+00:00"
+  "summary": "Выпущено 4 из 4 ключевых изменений. Проверяем весь цикл аренды.",
+  "updatedAt": "2026-11-18T13:35:49.645709+00:00"
 }
