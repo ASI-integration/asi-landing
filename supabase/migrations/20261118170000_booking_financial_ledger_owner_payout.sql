@@ -47,7 +47,9 @@ DECLARE
   gross bigint; hold_amt bigint; retained bigint; commission bigint; cleaning bigint;
   payout bigint; delta bigint; cur text;
 BEGIN
-  IF current_setting('request.jwt.claim.role',true) IS DISTINCT FROM 'service_role'
+  -- PostgREST v12 exposes authenticated claims in request.jwt.claims JSON.
+  -- Do not trust SECURITY DEFINER current_user (it becomes the function owner).
+  IF coalesce(current_setting('request.jwt.claims',true)::jsonb->>'role','') <> 'service_role'
      AND session_user <> 'postgres' THEN
     RAISE EXCEPTION 'service_role_required' USING ERRCODE = '42501';
   END IF;
