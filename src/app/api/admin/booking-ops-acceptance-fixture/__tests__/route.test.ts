@@ -62,6 +62,8 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
       OPS_ACCEPTANCE_FIXTURE_RPC_V2_VERIFIED: 'YES',
       NEXT_PUBLIC_APP_URL: APP,
       OPS_ACCEPTANCE_FIXTURE_CSRF_TOKEN: PROOF,
+      UPSTASH_REDIS_REST_URL: 'https://fixture-redis.upstash.io',
+      UPSTASH_REDIS_REST_TOKEN: 'example_test_only_token_never_used_outside_tests_1234',
     })) vi.stubEnv(k, v);
     mocks.requireOpsAdminSession.mockResolvedValue({ session: { userId: 'actor-a' } });
     mocks.requireBookingOpsRouteAccess.mockResolvedValue({
@@ -70,9 +72,13 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
     });
     mocks.requireBookingOpsRecordScope.mockResolvedValue({});
     mocks.rpc.mockResolvedValue({ data: true, error: null });
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () =>
+      new Response(JSON.stringify({ result: [1, 59000] }), { status: 200 }),
+    ));
   });
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -120,6 +126,60 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
     const req = request({ ...body(), padding: '🙂'.repeat(530) });
     req.headers.delete('content-length');
     expect((await POST(req)).status).toBe(413);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('requires the shared limiter even with an authenticated owner session', async () => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', '');
+    const result = await POST(request());
+    expect(result.status).toBe(503);
+    expect(await result.json()).toMatchObject({ message: 'fixture_rate_limiter_unavailable' });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('fails closed if Redis is unreachable or returns a malformed result', async () => {
+    vi.mocked(fetch).mockRejectedValueOnce(new Error('redis offline'));
+    expect((await POST(request())).status).toBe(503);
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ result: 'OK' })));
+    expect((await POST(request())).status).toBe(503);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('enforces the global Redis deny decision before reading body or calling RPC', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ result: [0, 27000] })),
+    );
+    const req = request();
+    const result = await POST(req);
+    expect(result.status).toBe(429);
+    expect(result.headers.get('Retry-After')).toBe('27');
+    expect(req.bodyUsed).toBe(false);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('uses one atomic Redis EVAL with a fixed staging record bucket', async () => {
+    expect((await POST(request())).status).toBe(200);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, opts] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe('https://fixture-redis.upstash.io/');
+    const command = JSON.parse(String(opts?.body));
+    expect(command[0]).toBe('EVAL');
+    expect(command[2]).toBe(1);
+    expect(command[3]).toBe('asi:staging:fixture:v2:' + PINNED);
+    expect(command[4]).toBe(5);
+    expect(command[5]).toBe(60000);
+    expect(command[1]).toContain("redis.call('INCR', KEYS[1])");
+    expect(command[1]).toContain("redis.call('PEXPIRE', KEYS[1], window)");
+  });
+  it('only accepts exact application/json with optional utf-8 charset', async () => {
+    const bad = request();
+    bad.headers.set('Content-Type', 'application/json; boundary=bad');
+    expect((await POST(bad)).status).toBe(403);
+    expect(fetch).not.toHaveBeenCalled();
+    const good = request();
+    good.headers.set('Content-Type', 'application/json; charset=UTF-8');
+    expect((await POST(good)).status).toBe(200);
+  });
+  it('denies invalid Redis origins rather than sending the credential to another host', async () => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://attacker.example.net/');
+    expect((await POST(request())).status).toBe(503);
+    expect(fetch).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
   it('limits valid admin attempts to five per process per minute, then returns 429', async () => {
