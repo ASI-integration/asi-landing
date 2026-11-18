@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { performance } from 'node:perf_hooks';
 
 const mocks = vi.hoisted(() => ({
   requireOpsAdminSession: vi.fn(),
@@ -18,21 +19,30 @@ vi.mock('@/lib/booking-ops/repository', () => ({
 vi.mock('@/lib/supabase', () => ({ supabase: { rpc: mocks.rpc } }));
 import { POST } from '../route';
 
-const PINNED = '5477f7dd-2d60-4a3d-9212-c74e8d36119e';
+const PINNED = '11111111-1111-4111-8111-111111111111';
+const OWNER_ACCOUNT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const OWNER_PROPERTY = '33333333-3333-4333-8333-333333333333';
 const APP = 'https://staging.example.test';
+const PROOF = 'ASI_FIXTURE_UNIT_TEST_PROOF_TOKEN_000000000000';
+let monotonicMs = 10000000000;
 const body = () => ({
   bookingOpsRecordId: PINNED, confirm: true, noSend: true,
   acknowledgeSyntheticOnly: true,
 });
 const request = (payload: unknown = body(), origin = APP) => new Request(APP + '/api/admin/booking-ops-acceptance-fixture', {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json', Origin: origin },
+  headers: { 'Content-Type': 'application/json', Origin: origin, 'Sec-Fetch-Site': 'same-origin', 'x-asi-fixture-csrf-token': PROOF },
   body: JSON.stringify(payload),
 });
 
 describe('owner-scoped staging acceptance fixture authorization', () => {
+  let testClockIndex = 0;
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    monotonicMs += 61000;
+    vi.spyOn(performance, 'now').mockImplementation(() => monotonicMs);
+    vi.setSystemTime(new Date(2026, 10, 18, 12, 0, 0).getTime() + (++testClockIndex) * 61_000);
     for (const [k, v] of Object.entries({
       NODE_ENV: 'production',
       ASI_DEPLOYMENT_TIER: 'staging',
@@ -44,17 +54,34 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
       YOOKASSA_ENABLED: 'false',
       OPS_ACCEPTANCE_FIXTURE_MARKING_ENABLED: 'true',
       OPS_ACCEPTANCE_FIXTURE_RECORD_ID: PINNED,
+      OPS_ACCEPTANCE_FIXTURE_ACCOUNT_ID: OWNER_ACCOUNT,
+      OPS_ACCEPTANCE_FIXTURE_PROPERTY_ID: OWNER_PROPERTY,
+      OPS_ACCEPTANCE_FIXTURE_ALLOWED_RECORD_ID: PINNED,
+      OPS_ACCEPTANCE_FIXTURE_ALLOWED_ACCOUNT_ID: OWNER_ACCOUNT,
+      OPS_ACCEPTANCE_FIXTURE_ALLOWED_PROPERTY_ID: OWNER_PROPERTY,
+      OPS_ACCEPTANCE_FIXTURE_RPC_V2_VERIFIED: 'YES',
       NEXT_PUBLIC_APP_URL: APP,
+      OPS_ACCEPTANCE_FIXTURE_CSRF_TOKEN: PROOF,
+      UPSTASH_REDIS_REST_URL: 'https://fixture-redis.upstash.io',
+      UPSTASH_REDIS_REST_TOKEN: 'example_test_only_token_never_used_outside_tests_1234',
     })) vi.stubEnv(k, v);
     mocks.requireOpsAdminSession.mockResolvedValue({ session: { userId: 'actor-a' } });
     mocks.requireBookingOpsRouteAccess.mockResolvedValue({
-      actorId: 'actor-a', accountId: 'tenant-a', propertyId: 'property-a',
+      actorId: 'actor-a', accountId: OWNER_ACCOUNT, propertyId: OWNER_PROPERTY,
       bookingId: PINNED,
     });
     mocks.requireBookingOpsRecordScope.mockResolvedValue({});
     mocks.rpc.mockResolvedValue({ data: true, error: null });
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () =>
+      new Response(JSON.stringify({ result: [1, 59000] }), { status: 200 }),
+    ));
   });
-  afterEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
 
   it('marks only the owner-pinned record and persists through atomic audited RPC', async () => {
     const result = await POST(request());
@@ -62,12 +89,153 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
     expect(await result.json()).toMatchObject({ ok: true, acceptanceSafe: true, auditPersisted: true });
     expect(mocks.requireBookingOpsRouteAccess).toHaveBeenCalledWith({ userId: 'actor-a' }, PINNED);
     expect(mocks.requireBookingOpsRecordScope).toHaveBeenCalledWith(PINNED, {
-      accountId: 'tenant-a', propertyId: 'property-a',
+      accountId: OWNER_ACCOUNT, propertyId: OWNER_PROPERTY,
     });
     expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith('asi_mark_acceptance_fixture', {
-      p_record_id: PINNED, p_account_id: 'tenant-a',
-      p_property_id: 'property-a', p_actor_id: 'actor-a',
+      p_record_id: PINNED, p_account_id: OWNER_ACCOUNT,
+      p_property_id: OWNER_PROPERTY, p_actor_id: 'actor-a',
+      p_allowed_record_id: PINNED,
+      p_allowed_account_id: OWNER_ACCOUNT,
+      p_allowed_property_id: OWNER_PROPERTY,
     });
+  });
+  it('counts malformed requests with valid admin and request proof toward the five-call limit', async () => {
+    const invalid = { ...body(), acknowledgeSyntheticOnly: false };
+    for (let n = 0; n < 5; n += 1) {
+      expect((await POST(request(invalid))).status).toBe(400);
+    }
+    const overLimit = await POST(request(invalid));
+    expect(overLimit.status).toBe(429);
+    expect(overLimit.headers.get('Retry-After')).toMatch(/^[1-9][0-9]*$/);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('rejects declared oversized bodies without reading the payload', async () => {
+    const req = request();
+    req.headers.set('content-length', '2049');
+    expect((await POST(req)).status).toBe(413);
+    expect(req.bodyUsed).toBe(false);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('rejects oversized bodies even without Content-Length', async () => {
+    const req = request('x'.repeat(4096));
+    req.headers.delete('content-length');
+    expect((await POST(req)).status).toBe(413);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('enforces the 2048-byte limit rather than UTF-16 string length', async () => {
+    const req = request({ ...body(), padding: '🙂'.repeat(530) });
+    req.headers.delete('content-length');
+    expect((await POST(req)).status).toBe(413);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('requires the shared limiter even with an authenticated owner session', async () => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', '');
+    const result = await POST(request());
+    expect(result.status).toBe(503);
+    expect(await result.json()).toMatchObject({ message: 'fixture_rate_limiter_unavailable' });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('fails closed if Redis is unreachable or returns a malformed result', async () => {
+    vi.mocked(fetch).mockRejectedValueOnce(new Error('redis offline'));
+    expect((await POST(request())).status).toBe(503);
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ result: 'OK' })));
+    expect((await POST(request())).status).toBe(503);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('enforces the global Redis deny decision before reading body or calling RPC', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ result: [0, 27000] })),
+    );
+    const req = request();
+    const result = await POST(req);
+    expect(result.status).toBe(429);
+    expect(result.headers.get('Retry-After')).toBe('27');
+    expect(req.bodyUsed).toBe(false);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('uses one atomic Redis EVAL with a fixed staging record bucket', async () => {
+    expect((await POST(request())).status).toBe(200);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, opts] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe('https://fixture-redis.upstash.io/');
+    const command = JSON.parse(String(opts?.body));
+    expect(command[0]).toBe('EVAL');
+    expect(command[2]).toBe(1);
+    expect(command[3]).toBe('asi:staging:fixture:v2:' + PINNED);
+    expect(command[4]).toBe(5);
+    expect(command[5]).toBe(60000);
+    expect(command[1]).toContain("redis.call('INCR', KEYS[1])");
+    expect(command[1]).toContain("redis.call('PEXPIRE', KEYS[1], window)");
+  });
+  it('only accepts exact application/json with optional utf-8 charset', async () => {
+    const bad = request();
+    bad.headers.set('Content-Type', 'application/json; boundary=bad');
+    expect((await POST(bad)).status).toBe(403);
+    expect(fetch).not.toHaveBeenCalled();
+    const good = request();
+    good.headers.set('Content-Type', 'application/json; charset=UTF-8');
+    expect((await POST(good)).status).toBe(200);
+  });
+  it('denies invalid Redis origins rather than sending the credential to another host', async () => {
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://attacker.example.net/');
+    expect((await POST(request())).status).toBe(503);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('limits valid admin attempts to five per process per minute, then returns 429', async () => {
+    for (let n = 0; n < 5; n += 1) {
+      expect((await POST(request())).status).toBe(200);
+    }
+    const response = await POST(request());
+    expect(response.status).toBe(429);
+    expect(response.headers.get('Retry-After')).toMatch(/^[1-9][0-9]*$/);
+    expect(await response.json()).toMatchObject({ ok: false, message: 'too_many_requests' });
+    expect(mocks.rpc).toHaveBeenCalledTimes(5);
+    monotonicMs += 60001;
+    expect((await POST(request())).status).toBe(200);
+    expect(mocks.rpc).toHaveBeenCalledTimes(6);
+  });
+  it.each([
+    ['OPS_ACCEPTANCE_FIXTURE_ACCOUNT_ID', PINNED],
+    ['OPS_ACCEPTANCE_FIXTURE_PROPERTY_ID', OWNER_ACCOUNT],
+  ])('rejects UUIDs that overlap between fixture record/account/property: %s', async (key, value) => {
+    vi.stubEnv(key, value);
+    vi.stubEnv(key === 'OPS_ACCEPTANCE_FIXTURE_ACCOUNT_ID'
+      ? 'OPS_ACCEPTANCE_FIXTURE_ALLOWED_ACCOUNT_ID'
+      : 'OPS_ACCEPTANCE_FIXTURE_ALLOWED_PROPERTY_ID', value);
+    expect((await POST(request())).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('requires separately provisioned non-cookie operator request proof', async () => {
+    const req = new Request(APP + '/api/admin/booking-ops-acceptance-fixture', {
+      method: 'POST', headers: { 'Content-Type': 'application/json',
+        Origin: APP, 'Sec-Fetch-Site': 'same-origin' },
+      body: JSON.stringify(body()),
+    });
+    expect((await POST(req)).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('rejects missing operator secret even for a valid admin session', async () => {
+    vi.stubEnv('OPS_ACCEPTANCE_FIXTURE_CSRF_TOKEN', '');
+    expect((await POST(request())).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('uses monotonic time for rate limit despite large wall-clock jumps', async () => {
+    for (let i = 0; i < 5; i += 1) expect((await POST(request())).status).toBe(200);
+    vi.setSystemTime(new Date(2035, 1, 1));
+    expect((await POST(request())).status).toBe(429);
+    vi.setSystemTime(new Date(2001, 1, 1));
+    expect((await POST(request())).status).toBe(429);
+    monotonicMs += 60001;
+    expect((await POST(request())).status).toBe(200);
+  });
+  it('rejects malformed UUID returned by real scope authorization before RPC', async () => {
+    mocks.requireBookingOpsRouteAccess.mockResolvedValueOnce({
+      actorId: 'actor-a', accountId: 'non-uuid', propertyId: OWNER_PROPERTY,
+      bookingId: PINNED,
+    });
+    expect((await POST(request())).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
   it('denies unverified admin access before any record lookup', async () => {
     mocks.requireOpsAdminSession.mockResolvedValueOnce({ error: new Response('denied', { status: 403 }) });
@@ -75,7 +243,8 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
     expect(mocks.requireBookingOpsRouteAccess).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
-  it.each(['ASI_DEPLOYMENT_TIER','ASI_SYNTHETIC_NO_SEND','EMAIL_AUTO_SEND','EMAIL_DRAFT_ONLY','DRY_RUN_TELEGRAM_OUTBOUND','ALLOW_REAL_TELEGRAM_SYNTHETIC','YOOKASSA_ENABLED','OPS_ACCEPTANCE_FIXTURE_MARKING_ENABLED'])(
+  it.each(['ASI_DEPLOYMENT_TIER','ASI_SYNTHETIC_NO_SEND','EMAIL_AUTO_SEND','EMAIL_DRAFT_ONLY','DRY_RUN_TELEGRAM_OUTBOUND','ALLOW_REAL_TELEGRAM_SYNTHETIC','YOOKASSA_ENABLED','OPS_ACCEPTANCE_FIXTURE_MARKING_ENABLED',
+    'OPS_ACCEPTANCE_FIXTURE_RPC_V2_VERIFIED'])(
     'fails closed if %s is not in its approved state', async (variable) => {
       vi.stubEnv(variable, 'disabled');
       expect((await POST(request())).status).toBe(403);
@@ -98,10 +267,83 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
     expect((await POST(request(body(), 'https://attacker.example'))).status).toBe(403);
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
+  it('requires Sec-Fetch-Site, never allows a missing fetch-metadata header', async () => {
+    const unsafe = new Request(APP + '/api/admin/booking-ops-acceptance-fixture', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: APP },
+      body: JSON.stringify(body()),
+    });
+    expect((await POST(unsafe)).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('rejects noncanonical uppercase UUIDs in environment configuration', async () => {
+    vi.stubEnv('OPS_ACCEPTANCE_FIXTURE_ALLOWED_ACCOUNT_ID', OWNER_ACCOUNT.toUpperCase());
+    expect((await POST(request())).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
   it('requires verified booking/account/property ownership', async () => {
     mocks.requireBookingOpsRouteAccess.mockRejectedValueOnce(new Error('booking_scope_mismatch'));
     expect((await POST(request())).status).toBe(403);
     expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it('requires a canonical UUID for the owner-selected record', async () => {
+    vi.stubEnv('OPS_ACCEPTANCE_FIXTURE_RECORD_ID', '5477f7dd-----------------------------');
+    expect((await POST(request())).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it.each(['OPS_ACCEPTANCE_FIXTURE_ACCOUNT_ID', 'OPS_ACCEPTANCE_FIXTURE_PROPERTY_ID'])(
+    'refuses missing explicit owner tenant pin %s', async (name) => {
+      vi.stubEnv(name, '');
+      expect((await POST(request())).status).toBe(403);
+      expect(mocks.rpc).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    'OPS_ACCEPTANCE_FIXTURE_ALLOWED_RECORD_ID',
+    'OPS_ACCEPTANCE_FIXTURE_ALLOWED_ACCOUNT_ID',
+    'OPS_ACCEPTANCE_FIXTURE_ALLOWED_PROPERTY_ID',
+  ])('fails closed without required allowed UUID parameter %s', async (key) => {
+    vi.stubEnv(key, '');
+    expect((await POST(request())).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it.each([
+    'OPS_ACCEPTANCE_FIXTURE_ALLOWED_RECORD_ID',
+    'OPS_ACCEPTANCE_FIXTURE_ALLOWED_ACCOUNT_ID',
+    'OPS_ACCEPTANCE_FIXTURE_ALLOWED_PROPERTY_ID',
+  ])('rejects mismatched allowed UUID parameter %s', async (key) => {
+    vi.stubEnv(key, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    expect((await POST(request())).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('refuses a cross-tenant or cross-property record even if the session is authorized', async () => {
+    mocks.requireBookingOpsRouteAccess.mockResolvedValueOnce({
+      actorId: 'actor-a', accountId: OWNER_ACCOUNT,
+      propertyId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', bookingId: PINNED,
+    });
+    expect((await POST(request())).status).toBe(403);
+    expect(mocks.requireBookingOpsRecordScope).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('requires explicit app and SQL owner scopes to agree', async () => {
+    vi.stubEnv('OPS_ACCEPTANCE_FIXTURE_ACCOUNT_ID', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    expect((await POST(request())).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('denies cross-site fetch metadata even with a forged Origin header', async () => {
+    const unsafe = new Request(APP + '/api/admin/booking-ops-acceptance-fixture', {
+      method: 'POST', headers: {
+        'Content-Type': 'application/json', Origin: APP, 'Sec-Fetch-Site': 'cross-site',
+      }, body: JSON.stringify(body()),
+    });
+    expect((await POST(unsafe)).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('does not expose internal exception text or database identifiers', async () => {
+    mocks.rpc.mockRejectedValueOnce(new Error('db_account_secret_internal'));
+    const res = await POST(request());
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ ok: false, message: 'fixture_marking_failed' });
   });
   it('does not claim success after database failure', async () => {
     mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: 'error' } });
