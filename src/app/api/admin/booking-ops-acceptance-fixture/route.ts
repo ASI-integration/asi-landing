@@ -68,17 +68,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: 'explicit_pinned_fixture_confirmation_required' }, { status: 400 });
   }
 
+  let access: Awaited<ReturnType<typeof requireBookingOpsRouteAccess>>;
   try {
-    const access = await requireBookingOpsRouteAccess(auth.session, pinnedId);
-    if (!access.actorId || !access.accountId || access.accountId === 'legacy' ||
-        access.accountId !== pinnedAccountId ||
-        !access.propertyId || access.propertyId !== pinnedPropertyId ||
-        access.bookingId !== pinnedId) {
-      return NextResponse.json({ ok: false, message: 'tenant_scope_unavailable' }, { status: 403 });
-    }
+    access = await requireBookingOpsRouteAccess(auth.session, pinnedId);
+  } catch {
+    return NextResponse.json({ ok: false, message: 'tenant_scope_unavailable' }, { status: 403 });
+  }
+  if (!access.actorId || !access.accountId || access.accountId === 'legacy' ||
+      access.accountId !== pinnedAccountId ||
+      !access.propertyId || access.propertyId !== pinnedPropertyId ||
+      access.bookingId !== pinnedId) {
+    return NextResponse.json({ ok: false, message: 'tenant_scope_unavailable' }, { status: 403 });
+  }
+  try {
     await requireBookingOpsRecordScope(pinnedId, {
       accountId: access.accountId, propertyId: access.propertyId,
     });
+  } catch {
+    return NextResponse.json({ ok: false, message: 'tenant_scope_unavailable' }, { status: 403 });
+  }
+  try {
     const { data, error } = await supabase.rpc('asi_mark_acceptance_fixture', {
       p_record_id: pinnedId,
       p_account_id: access.accountId,
@@ -91,12 +100,9 @@ export async function POST(req: Request) {
       ok: true, bookingOpsRecordId: pinnedId,
       acceptanceSafe: true, auditPersisted: true,
     });
-  } catch (error) {
-    // Keep internal SQL errors and tenant identifiers out of API responses.
-    const internal = error instanceof Error ? error.message : '';
-    const scoped = internal.includes('scope') || internal.includes('account');
-    return NextResponse.json({
-      ok: false, message: scoped ? 'tenant_scope_unavailable' : 'fixture_marking_failed',
-    }, { status: scoped ? 403 : 422 });
+  } catch {
+    // Every database failure returns the same opaque response. Never classify
+    // or reflect database/internal exception text back to the caller.
+    return NextResponse.json({ ok: false, message: 'fixture_marking_failed' }, { status: 422 });
   }
 }

@@ -146,8 +146,8 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
   it('does not expose internal exception text or database identifiers', async () => {
     mocks.rpc.mockRejectedValueOnce(new Error('db_account_secret_internal'));
     const res = await POST(request());
-    expect(res.status).toBe(403);
-    expect(await res.json()).toMatchObject({ ok: false, message: 'tenant_scope_unavailable' });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ ok: false, message: 'fixture_marking_failed' });
   });
   it('does not claim success after database failure', async () => {
     mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: 'error' } });
