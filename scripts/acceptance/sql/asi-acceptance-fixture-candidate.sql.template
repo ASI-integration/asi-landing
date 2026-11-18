@@ -1,3 +1,6 @@
+-- NON-EXECUTABLE MIGRATION TEMPLATE (.sql.template): never load into psql,
+-- Supabase SQL Editor or migration runner without separate DB-security approval.
+-- Existing function is ALREADY DEPLOYED to a SHARED staging/production DB.
 -- SOURCE CANDIDATE ONLY: this is NOT permission to reapply the SQL to the
 -- SHARED Supabase database. Read-only inspection on 2026-11-18 confirms the
 -- original function already exists and the exact fixture was already marked
@@ -22,12 +25,25 @@ BEGIN
      OR nullif(trim(p_property_id),'') IS NULL OR nullif(trim(p_actor_id),'') IS NULL THEN
     RAISE EXCEPTION 'fixture_parameters_invalid';
   END IF;
-  -- This RPC is intentionally scoped to the single owner-selected synthetic record.
-  -- It cannot be used as a generic backdoor for marking other tenant bookings.
+  -- Fail CLOSED before any row access for every non-fixture record/tenant/property.
+  -- All three values are exact and immutable for this single source candidate:
+  -- no other account, property or booking-ops record can ever be marked.
   IF p_record_id IS DISTINCT FROM '5477f7dd-2d60-4a3d-9212-c74e8d36119e'::uuid
      OR p_account_id IS DISTINCT FROM '9623421a-3b3d-4331-b126-8ca63c5611f1'
      OR p_property_id IS DISTINCT FROM '0bc3d3dd-678c-4d42-b1a1-d9cce39d53ac' THEN
     RAISE EXCEPTION 'fixture_record_not_owner_pinned';
+  END IF;
+  -- The receipt is only safe if the unique dedupe constraint is present.
+  IF NOT EXISTS (
+      SELECT 1 FROM pg_catalog.pg_index i
+      JOIN pg_catalog.pg_class idx ON idx.oid=i.indexrelid
+      JOIN pg_catalog.pg_class tab ON tab.oid=i.indrelid
+      JOIN pg_catalog.pg_namespace ns ON ns.oid=tab.relnamespace
+      WHERE ns.nspname='public' AND tab.relname='booking_ops_events'
+        AND idx.relname='idx_booking_ops_events_dedupe'
+        AND i.indisunique AND i.indisvalid AND i.indisready
+    ) THEN
+    RAISE EXCEPTION 'fixture_dedupe_unique_index_required';
   END IF;
   SELECT * INTO v FROM public.booking_ops_records
     WHERE id=p_record_id AND account_id=p_account_id AND property_id=p_property_id
@@ -38,6 +54,9 @@ BEGIN
   IF v.booking_id IS NOT NULL OR v.ota_source IS DISTINCT FROM 'manual'
      OR v.ops_status IS DISTINCT FROM 'created'
      OR v.guest_name IS NULL
+     -- Explicit synthetic name prefix required for ALL calls, including
+     -- idempotent ones. The real pinned record was read-only verified to match.
+     OR btrim(v.guest_name) !~* '^ASI[[:space:]_-]+SYNTHETIC[[:space:]_-]+'
      OR nullif(trim(COALESCE(v.guest_email,'')),'') IS NOT NULL
      OR nullif(trim(COALESCE(v.guest_phone,'')),'') IS NOT NULL
      OR nullif(trim(COALESCE(v.guest_telegram,'')),'') IS NOT NULL
@@ -46,18 +65,30 @@ BEGIN
      OR v.checkin_readiness_status IS DISTINCT FROM 'not_started' THEN
     RAISE EXCEPTION 'fixture_provenance_not_verified';
   END IF;
+  -- Idempotence is allowed ONLY for the exact owner-pinned synthetic record,
+  -- with an exact metadata provenance marker and exact tenant-scoped audit.
+  -- An already-marked record without complete proof must RAISE, not return false.
   IF v.reservation_metadata->>'acceptance_safe' = 'true' THEN
-    RETURN EXISTS (SELECT 1 FROM public.booking_ops_events
-      WHERE booking_ops_record_id=p_record_id
-        AND dedupe_key='acceptance-fixture:'||p_record_id::text
-        AND metadata->>'no_send'='true');
+    IF v.reservation_metadata->>'test_reservation' IS DISTINCT FROM 'true'
+       OR v.reservation_metadata->>'environment' IS DISTINCT FROM 'test'
+       OR v.reservation_metadata->>'acceptance_source'
+            IS DISTINCT FROM 'owner_scoped_staging_fixture'
+       OR NOT EXISTS (SELECT 1 FROM public.booking_ops_events
+         WHERE booking_ops_record_id=p_record_id
+           AND dedupe_key='acceptance-fixture:'||p_record_id::text
+           AND metadata->>'no_send'='true'
+           AND metadata->>'synthetic_only'='true'
+           AND metadata->>'account_id'=p_account_id
+           AND metadata->>'property_id'=p_property_id) THEN
+      RAISE EXCEPTION 'fixture_existing_provenance_or_audit_invalid';
+    END IF;
+    RETURN true;
   END IF;
-  -- Existing single-row acceptance evidence is idempotent only when the
-  -- exact no-send audit receipt is present (checked above). New marking is
-  -- stricter: a prefix like "Test User - Real Booking" is never sufficient.
+  -- New marking requires the exact synthetic fixture label, in addition to
+  -- the explicit ASI SYNTHETIC prefix already checked above.
   IF btrim(v.guest_name) !~*
-     '^(asi[[:space:]]+synthetic[[:space:]]+acceptance[[:space:]]+fixture|synthetic[[:space:]]+acceptance[[:space:]]+fixture)$' THEN
-    RAISE EXCEPTION 'fixture_provenance_not_verified';
+     '^ASI[[:space:]_-]+SYNTHETIC[[:space:]]+ACCEPTANCE[[:space:]]+FIXTURE$' THEN
+    RAISE EXCEPTION 'fixture_new_record_requires_exact_synthetic_label';
   END IF;
   IF COALESCE(v.reservation_metadata, '{}'::jsonb) <> '{}'::jsonb THEN
     RAISE EXCEPTION 'fixture_has_preexisting_metadata';
@@ -68,6 +99,8 @@ BEGIN
     RAISE EXCEPTION 'fixture_audit_already_exists';
   END IF;
 
+  -- All checks above completed before ANY write; the row remains FOR UPDATE
+  -- locked through the metadata update + same-transaction audit insert.
   UPDATE public.booking_ops_records
   SET reservation_metadata=jsonb_build_object(
       'acceptance_safe',true,'test_reservation',true,'environment','test',
