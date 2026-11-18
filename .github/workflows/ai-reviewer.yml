@@ -111,7 +111,7 @@ jobs:
                   "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
-                  model: "anthropic/claude-opus-4.5",
+                  model: "anthropic/claude-sonnet-5.5",
                   messages: [
                     { role: "system", content: system },
                     { role: "user", content: prompt }
