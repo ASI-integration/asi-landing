@@ -76,9 +76,9 @@ describe('G2 fixture real PostgreSQL SQL and tenant-isolation integration', () =
      const signature='public.asi_mark_acceptance_fixture(uuid,text,text,text,uuid,uuid,uuid)';
      const acl=await run(`SELECT
        to_regprocedure('public.asi_mark_acceptance_fixture(uuid,text,text,text)') IS NULL AS old_gone,
-       has_function_privilege('anon','`+signature+`','EXECUTE') AS anon,
-       has_function_privilege('authenticated','`+signature+`','EXECUTE') AS auth,
-       has_function_privilege('service_role','`+signature+`','EXECUTE') AS service`);
+       has_function_privilege('anon',$1::text,'EXECUTE') AS anon,
+       has_function_privilege('authenticated',$1::text,'EXECUTE') AS auth,
+       has_function_privilege('service_role',$1::text,'EXECUTE') AS service`,[signature]);
      expect(acl.rows[0]).toMatchObject({old_gone:true,anon:false,auth:false,service:true});
      const args=[rec,account,property,'actor',rec,account,property];
      // The migration owner (postgres) must NOT be allowed to invoke the RPC.
@@ -94,7 +94,7 @@ describe('G2 fixture real PostgreSQL SQL and tenant-isolation integration', () =
      expect((await run('SELECT count(*)::int AS n FROM public.booking_ops_events')).rows[0].n).toBe(1);
      await run('RESET ROLE');
      await run('ROLLBACK');open=false;rolledBack=true;
-     expect((await run(`SELECT to_regprocedure('`+signature+`') IS NULL AS absent`)).rows[0].absent).toBe(true);
+     expect((await run('SELECT to_regprocedure($1::text) IS NULL AS absent',[signature])).rows[0].absent).toBe(true);
      console.log('ASI_FIXTURE_PG_PROOF '+JSON.stringify({
        realRpc:true,wrongTenantDenied:true,nonsyntheticDenied:true,
        wrongRecordDenied:true,postgresDenied:true,oneAuditOnly:true,oldOverloadReplaced:true,

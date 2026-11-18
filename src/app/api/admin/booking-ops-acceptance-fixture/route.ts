@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { requireOpsAdminSession } from '@/lib/crm/api-auth';
 import { requireBookingOpsRouteAccess } from '@/lib/booking-ops/route-access';
@@ -95,8 +95,9 @@ export async function POST(req: Request) {
   const secret = process.env.OPS_ACCEPTANCE_FIXTURE_CSRF_TOKEN;
   const supplied = req.headers.get('x-asi-fixture-csrf-token');
   if (!secret || !/^[A-Za-z0-9_-]{32,128}$/.test(secret) ||
-      !supplied || supplied.length !== secret.length ||
-      !timingSafeEqual(Buffer.from(supplied), Buffer.from(secret))) {
+      !supplied || !/^[A-Za-z0-9_-]{32,128}$/.test(supplied) ||
+      !timingSafeEqual(createHash('sha256').update(supplied).digest(),
+                       createHash('sha256').update(secret).digest())) {
     return NextResponse.json({ ok: false, message: 'fixture_request_proof_required' }, { status: 403 });
   }
   const fetchSite = req.headers.get('sec-fetch-site');
