@@ -103,6 +103,25 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
     expect(overLimit.headers.get('Retry-After')).toMatch(/^[1-9][0-9]*$/);
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
+  it('rejects declared oversized bodies without reading the payload', async () => {
+    const req = request();
+    req.headers.set('content-length', '2049');
+    expect((await POST(req)).status).toBe(413);
+    expect(req.bodyUsed).toBe(false);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('rejects oversized bodies even without Content-Length', async () => {
+    const req = request('x'.repeat(4096));
+    req.headers.delete('content-length');
+    expect((await POST(req)).status).toBe(413);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('enforces the 2048-byte limit rather than UTF-16 string length', async () => {
+    const req = request({ ...body(), padding: '🙂'.repeat(530) });
+    req.headers.delete('content-length');
+    expect((await POST(req)).status).toBe(413);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
   it('limits valid admin attempts to five per process per minute, then returns 429', async () => {
     for (let n = 0; n < 5; n += 1) {
       expect((await POST(request())).status).toBe(200);
