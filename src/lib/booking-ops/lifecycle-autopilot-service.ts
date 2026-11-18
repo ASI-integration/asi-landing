@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { initialLifecycleState, reduceLifecycle, type BookingEventActor, type LifecycleEvent, type LifecycleState } from './lifecycle-autopilot';
 import { convergeLifecycleEvent } from './lifecycle-convergence';
 import { requireBookingOpsRecordScope } from './repository';
+import { settleClosedBookingFinance } from './owner-finance-settlement';
 
 type ExpectedScope = { accountId: string; propertyId: string };
 
@@ -61,6 +62,11 @@ async function processBookingDomainEventRunning(eventId: string, expectedScope?:
   const auditWrite = await supabase.from('booking_ops_lifecycle_decisions').insert({ id: randomUUID(), booking_id: event.bookingId, event_id: event.id, previous_stage: previous.stage, next_stage: decision.state.stage, decision: audit, blockers: decision.state.blockers, actions: decision.eventsToEmit });
   if (auditWrite.error?.code === '23505') return { processed: false, duplicate: true };
   if (auditWrite.error) throw new Error(auditWrite.error.message);
+  // Only a genuinely closed canonical lifecycle may settle money; fail closed
+  // if source commission, expense or deposit inputs have not been verified.
+  if (event.type === 'booking.closed' && decision.state.stage === 'closed' && expectedScope) {
+    await settleClosedBookingFinance(event.bookingId, expectedScope);
+  }
   if (expectedScope) await requireBookingOpsRecordScope(event.bookingId, expectedScope);
   await supabase.from('booking_ops_domain_events').update({ processed_at: now, processing_error: null }).eq('id', event.id);
   for (const emittedType of decision.eventsToEmit) {
