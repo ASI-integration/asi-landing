@@ -10,7 +10,7 @@
     "pr669Merged": true
   },
   "header": {
-    "reason": "BLOCKED_B01_T30 — N01–N15 PASS; браузер не проверен, T30: ERR_MODULE_NOT_FOUND (strigunov-finishline-booking.ts)",
+    "reason": "BLOCKED_B01_T30 — N01–N15 PASS; браузер не проверен, T30 не выполнен",
     "state": "owner"
   },
   "health": {
@@ -33,7 +33,7 @@
       "percent": 100
     },
     {
-      "detail": "BLOCKED_B01_T30: N01–N15 PASS, браузер не подтверждён, отсутствует сценарий T30",
+      "detail": "BLOCKED_B01_T30: незавершённые проверки",
       "percent": 0
     },
     {
@@ -46,5 +46,5 @@
     }
   ],
   "summary": "Выпущено 4 из 4 ключевых изменений. Проверяем весь цикл аренды.",
-  "updatedAt": "2026-11-18T15:10:16.849931+00:00"
+  "updatedAt": "2026-11-18T15:29:40.735995+00:00"
 }
