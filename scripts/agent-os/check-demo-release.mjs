@@ -1177,7 +1177,8 @@ export async function verifiedOwnerComment(number, sha, kind, token, reader) {
 // Routine source/test changes do not require repeat exact-head owner comments.
 // A protected CI gate still verifies scope, diff, review and merge separately.
 function ordinaryChangePath(p) {
-  if (typeof p !== 'string' || !/^(?:src\/|tests\/|docs\/|scripts\/acceptance\/)/.test(p)) return false;
+  if (typeof p !== 'string' || p.includes('\\') || /[\x00-\x1f\x7f]/.test(p)) return false;
+  if (!/^(?:src\/|tests\/|docs\/|scripts\/acceptance\/)/.test(p)) return false;
   if (GOVERNANCE.has(p) || OWNER_BASELINE_PATHS.has(p)) return false;
   if (/(?:^|\/)(?:auth|security|permission|payment|billing|finance|financial|migration|infrastructure|infra|deploy|production|release|secrets?|credentials?|owner-gate)(?:\/|\.|-|$)/i.test(p)) return false;
   if (/^src\/(?:app|pages)\/api\//.test(p) || /\/(?:route|middleware|instrumentation)\.[cm]?[jt]sx?$/.test(p)) return false;
