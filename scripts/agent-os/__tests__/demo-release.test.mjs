@@ -307,7 +307,11 @@ test('20 routine Stage G2 host maintenance avoids per-file owner exception, prot
   ]) {
     assert.throws(()=>checkPr({...args,changed:[blocked]}),
       /PR_HAS_OUT_OF_STAGE_FILES|GOVERNANCE_CHANGE_NEEDS_VERIFIED_OWNER_ATTESTATION/);
-    assert.notEqual(requiredApproval({contract:c,changed:[blocked],prNumber:560,prBody:b,headSha:sha}),null);
+    // Off-stage ordinary source remains blocked by checkPr, but no longer
+    // requires a repeated owner SHA comment just to be rejected.
+    const approval=requiredApproval({contract:c,changed:[blocked],prNumber:560,prBody:b,headSha:sha});
+    if (blocked === 'src/unrelated.ts') assert.equal(approval,null);
+    else assert.notEqual(approval,null);
   }
 });
 

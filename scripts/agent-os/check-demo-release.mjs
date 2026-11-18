@@ -1174,6 +1174,16 @@ export async function verifiedOwnerComment(number, sha, kind, token, reader) {
   }
   throw new Error('OWNER_ATTESTATION_PAGINATION_BLOCK');
 }
+// Routine source/test changes do not require repeat exact-head owner comments.
+// A protected CI gate still verifies scope, diff, review and merge separately.
+function ordinaryChangePath(p) {
+  if (typeof p !== 'string' || p.includes('\\') || /[\x00-\x1f\x7f]/.test(p)) return false;
+  if (!/^(?:src\/|tests\/|docs\/|scripts\/acceptance\/)/.test(p)) return false;
+  if (GOVERNANCE.has(p) || OWNER_BASELINE_PATHS.has(p)) return false;
+  if (/(?:^|\/)(?:auth|security|permission|payment|billing|finance|financial|migration|infrastructure|infra|deploy|production|release|secrets?|credentials?|owner-gate)(?:\/|\.|-|$)/i.test(p)) return false;
+  if (/^src\/(?:app|pages)\/api\//.test(p) || /\/(?:route|middleware|instrumentation)\.[cm]?[jt]sx?$/.test(p)) return false;
+  return !/(?:^|\/)(?:\.env[^/]*|.*\.(?:pem|key|p12|pfx))$/.test(p);
+}
 export function requiredApproval({contract, changed, prNumber, prBody, headSha}) {
   // A security-level change receives ONE owner exact-head approval, not a new
   // second reviewer or multiple per-commit approvals.
@@ -1189,6 +1199,8 @@ export function requiredApproval({contract, changed, prNumber, prBody, headSha})
       contract.transition.legacyHeads[String(prNumber)] === headSha
       ? null : 'RELEASE-EXCEPTION';
   }
+  // Routine changes are exempt from repeated ASI-OWNER-APPROVE comments.
+  if (changed.every(ordinaryChangePath)) return null;
   const f = fields(prBody || '');
   if (f.mode === 'development' && changed.every(developmentPath)) return null;
   const next = contract.stages.find(s => s.status !== 'ACCEPTED')?.id;
