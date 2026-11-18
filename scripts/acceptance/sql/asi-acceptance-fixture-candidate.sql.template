@@ -38,11 +38,12 @@ BEGIN
     RAISE EXCEPTION 'fixture_parameters_invalid';
   END IF;
   -- Reject mismatched allowed/actual IDs BEFORE reading or writing a row.
-  -- Target tenant IDs are TEXT in the existing schema; canonical UUID text
-  -- is compared to the mandatory UUID allowlist inputs without truncation.
+  -- The target tenant columns are text in the current schema. Cast each to
+  -- UUID only after checking it exists; invalid strings raise an exception.
+  -- PostgreSQL UUID comparison is canonical and case/format independent.
   IF p_record_id IS DISTINCT FROM p_allowed_record_id
-     OR p_account_id IS DISTINCT FROM p_allowed_account_id::text
-     OR p_property_id IS DISTINCT FROM p_allowed_property_id::text THEN
+     OR p_account_id::uuid IS DISTINCT FROM p_allowed_account_id
+     OR p_property_id::uuid IS DISTINCT FROM p_allowed_property_id THEN
     RAISE EXCEPTION 'fixture_record_not_owner_pinned';
   END IF;
   -- The receipt is only safe if the unique dedupe constraint is present.

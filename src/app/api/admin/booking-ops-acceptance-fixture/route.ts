@@ -31,7 +31,8 @@ export async function POST(req: Request) {
   }
 
   const pinnedId = process.env.OPS_ACCEPTANCE_FIXTURE_RECORD_ID;
-  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  // Only canonical lowercase UUIDs are accepted from owner-controlled env.
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   if (!pinnedId || !uuidPattern.test(pinnedId)) {
     return NextResponse.json({ ok: false, message: 'fixture_record_not_pinned' }, { status: 403 });
   }
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
   try { if (appUrl) expectedOrigin = new URL(appUrl).origin; } catch { /* fail closed */ }
   const fetchSite = req.headers.get('sec-fetch-site');
   if (!origin || !expectedOrigin || origin !== expectedOrigin ||
-      (fetchSite && fetchSite !== 'same-origin') ||
+      fetchSite !== 'same-origin' ||
       !/^application\/json(?:\s*;|$)/i.test(req.headers.get('content-type') || '')) {
     return NextResponse.json({ ok: false, message: 'origin_or_json_required' }, { status: 403 });
   }

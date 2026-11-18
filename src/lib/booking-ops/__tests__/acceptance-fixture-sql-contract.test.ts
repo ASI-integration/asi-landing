@@ -16,8 +16,8 @@ describe('single-row SQL acceptance fixture: fail-closed source contract', () =>
   it('rejects every record, account or property except the three exact owner pins', () => {
     const ids = [
       'p_record_id IS DISTINCT FROM p_allowed_record_id',
-      'p_account_id IS DISTINCT FROM p_allowed_account_id::text',
-      'p_property_id IS DISTINCT FROM p_allowed_property_id::text',
+      'p_account_id::uuid IS DISTINCT FROM p_allowed_account_id',
+      'p_property_id::uuid IS DISTINCT FROM p_allowed_property_id',
     ];
     for (const id of ids) expect(sql).toContain(id);
     for (const arg of [

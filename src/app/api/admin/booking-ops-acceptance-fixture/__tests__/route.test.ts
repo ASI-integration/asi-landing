@@ -19,7 +19,7 @@ vi.mock('@/lib/supabase', () => ({ supabase: { rpc: mocks.rpc } }));
 import { POST } from '../route';
 
 const PINNED = '11111111-1111-4111-8111-111111111111';
-const OWNER_ACCOUNT = '22222222-2222-4222-8222-222222222222';
+const OWNER_ACCOUNT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const OWNER_PROPERTY = '33333333-3333-4333-8333-333333333333';
 const APP = 'https://staging.example.test';
 const body = () => ({
@@ -28,7 +28,7 @@ const body = () => ({
 });
 const request = (payload: unknown = body(), origin = APP) => new Request(APP + '/api/admin/booking-ops-acceptance-fixture', {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json', Origin: origin },
+  headers: { 'Content-Type': 'application/json', Origin: origin, 'Sec-Fetch-Site': 'same-origin' },
   body: JSON.stringify(payload),
 });
 
@@ -108,6 +108,19 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
   });
   it('enforces same-origin JSON instead of cross-site requests', async () => {
     expect((await POST(request(body(), 'https://attacker.example'))).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('requires Sec-Fetch-Site, never allows a missing fetch-metadata header', async () => {
+    const unsafe = new Request(APP + '/api/admin/booking-ops-acceptance-fixture', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: APP },
+      body: JSON.stringify(body()),
+    });
+    expect((await POST(unsafe)).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('rejects noncanonical uppercase UUIDs in environment configuration', async () => {
+    vi.stubEnv('OPS_ACCEPTANCE_FIXTURE_ALLOWED_ACCOUNT_ID', OWNER_ACCOUNT.toUpperCase());
+    expect((await POST(request())).status).toBe(403);
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
   it('requires verified booking/account/property ownership', async () => {
