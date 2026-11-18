@@ -33,13 +33,13 @@ export async function GET(req: Request) {
   };
   let debit: bigint, credit: bigint, expected: bigint, payout: bigint;
   try {
-    debit = (entries.data ?? []).reduce((sum, row) => sum + toCents(row.debit_cents), 0n);
-    credit = (entries.data ?? []).reduce((sum, row) => sum + toCents(row.credit_cents), 0n);
+    debit = (entries.data ?? []).reduce((sum, row) => sum + toCents(row.debit_cents), BigInt(0));
+    credit = (entries.data ?? []).reduce((sum, row) => sum + toCents(row.credit_cents), BigInt(0));
     const r = report.data;
     expected = toCents(r.gross_revenue_cents) - toCents(r.management_commission_cents)
       - toCents(r.operational_expenses_cents) + toCents(r.deposit_retained_cents);
     payout = toCents(r.owner_payout_cents);
-    if (toCents(r.balance_difference_cents) !== 0n) throw new Error('balance_difference');
+    if (toCents(r.balance_difference_cents) !== BigInt(0)) throw new Error('balance_difference');
   } catch {
     return NextResponse.json({ ok: false, error: 'invalid_financial_values' }, { status: 422 });
   }
