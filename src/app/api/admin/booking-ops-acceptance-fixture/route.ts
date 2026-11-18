@@ -28,13 +28,26 @@ export async function POST(req: Request) {
   }
 
   const pinnedId = process.env.OPS_ACCEPTANCE_FIXTURE_RECORD_ID;
-  if (!pinnedId || !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(pinnedId)) {
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!pinnedId || !uuidPattern.test(pinnedId)) {
     return NextResponse.json({ ok: false, message: 'fixture_record_not_pinned' }, { status: 403 });
+  }
+  // The two tenant values must be owner-pinned and match the single-row SQL
+  // candidate. Never rely on identifiers sourced only from a request/session.
+  const pinnedAccountId = process.env.OPS_ACCEPTANCE_FIXTURE_ACCOUNT_ID;
+  const pinnedPropertyId = process.env.OPS_ACCEPTANCE_FIXTURE_PROPERTY_ID;
+  if (!pinnedAccountId || !pinnedPropertyId ||
+      !uuidPattern.test(pinnedAccountId) || !uuidPattern.test(pinnedPropertyId)) {
+    return NextResponse.json({ ok: false, message: 'fixture_tenant_not_pinned' }, { status: 403 });
   }
   const origin = req.headers.get('origin');
   const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-  if (!origin || !appUrl || origin !== new URL(appUrl).origin ||
-      !req.headers.get('content-type')?.toLowerCase().startsWith('application/json')) {
+  let expectedOrigin: string | null = null;
+  try { if (appUrl) expectedOrigin = new URL(appUrl).origin; } catch { /* fail closed */ }
+  const fetchSite = req.headers.get('sec-fetch-site');
+  if (!origin || !expectedOrigin || origin !== expectedOrigin ||
+      (fetchSite && fetchSite !== 'same-origin') ||
+      !/^application\/json(?:\s*;|$)/i.test(req.headers.get('content-type') || '')) {
     return NextResponse.json({ ok: false, message: 'origin_or_json_required' }, { status: 403 });
   }
   const raw = await req.text();
@@ -58,7 +71,9 @@ export async function POST(req: Request) {
   try {
     const access = await requireBookingOpsRouteAccess(auth.session, pinnedId);
     if (!access.actorId || !access.accountId || access.accountId === 'legacy' ||
-        !access.propertyId || access.bookingId !== pinnedId) {
+        access.accountId !== pinnedAccountId ||
+        !access.propertyId || access.propertyId !== pinnedPropertyId ||
+        access.bookingId !== pinnedId) {
       return NextResponse.json({ ok: false, message: 'tenant_scope_unavailable' }, { status: 403 });
     }
     await requireBookingOpsRecordScope(pinnedId, {
@@ -77,9 +92,11 @@ export async function POST(req: Request) {
       acceptanceSafe: true, auditPersisted: true,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'fixture_marking_failed';
-    return NextResponse.json({ ok: false, message }, {
-      status: message.includes('scope') || message.includes('account') ? 403 : 422,
-    });
+    // Keep internal SQL errors and tenant identifiers out of API responses.
+    const internal = error instanceof Error ? error.message : '';
+    const scoped = internal.includes('scope') || internal.includes('account');
+    return NextResponse.json({
+      ok: false, message: scoped ? 'tenant_scope_unavailable' : 'fixture_marking_failed',
+    }, { status: scoped ? 403 : 422 });
   }
 }
