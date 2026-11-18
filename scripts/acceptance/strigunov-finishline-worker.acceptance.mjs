@@ -108,6 +108,9 @@ try{
     const booking=await client.query("SELECT id,reservation_metadata FROM booking_ops_records WHERE id=$1 AND account_id='29300000-0000-4000-8000-000000000002'",[originalId]);
     assert.equal(booking.rowCount,1);
     await client.query("UPDATE booking_ops_records SET reservation_metadata=COALESCE(reservation_metadata,'{}'::jsonb) || '{\"acceptance_safe\":true,\"test_reservation\":true}'::jsonb WHERE id=$1",[originalId]);
+    // Verified synthetic numbers: 12,000 revenue; 1,000 deposit hold; 200 retained;
+    // 2,400 management commission; 1,500 cleaning; expected owner payout 8,300.
+    await client.query("UPDATE booking_ops_records SET amount=12000, deposit_amount=1000, currency='RUB', reservation_metadata=reservation_metadata || $2::jsonb WHERE id=$1",[originalId,JSON.stringify({finance_inputs_verified:true,management_commission_cents:240000,cleaning_expense_cents:150000,deposit_retained_cents:20000})]);
     for(const role of ['cleaner','linen_worker','consumables','inspector']){
       const id=randomUUID();
       await client.query("INSERT INTO booking_ops_worker_tasks(id,booking_id,object_id,task_key,assigned_role,assigned_person_id,status,completed_at,notes) VALUES ($1,$2,$3,$4,$5,$6,'completed',now(),$7) ON CONFLICT (booking_id,task_key) DO NOTHING",[id,originalId,'29300000-0000-4000-8000-000000000003','acceptance_fixture_'+role,role,'synthetic_person_'+role,'synthetic acceptance fixture, no external staff']);
@@ -133,14 +136,27 @@ try{
   });
 
   await check('FINANCE-owner-payout-reconciliation',async()=>{
-    const candidates=await client.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND (table_name ILIKE '%financial%' OR table_name ILIKE '%commission%' OR table_name ILIKE '%payout%') ORDER BY table_name");
-    const evidence={source,bookingId:originalId,status:'BLOCKED',reason:null,financialTables:candidates.rows.map(x=>x.table_name)};
-    if(candidates.rowCount===0){
-      evidence.reason='MISSING_FINANCIAL_LEDGER_AND_OWNER_PAYOUT_REPORT: no financial/commission/payout tables in current acceptance schema; cannot derive independent expenses, commissions or owner payout';
-      writeFileSync('finishline-results/finance-report.json',JSON.stringify(evidence,null,2));
-      throw new Error(evidence.reason);
-    }
-    throw new Error('FINANCIAL_REPORT_INTEGRATION_NOT_VERIFIED');
+    assert.equal(process.env.ASI_LOCAL_ISOLATED_LAB,'YES');
+    const response=await fetch('http://127.0.0.1:33100/api/admin/booking-ops-owner-payout-report?bookingOpsRecordId='+originalId,{
+      headers:{Cookie:'asi_session='+operator}
+    });
+    const payload=await response.json();
+    writeFileSync('finishline-results/finance-report.json',JSON.stringify({source,httpStatus:response.status,...payload},null,2));
+    assert.equal(response.status,200,JSON.stringify(payload).slice(0,1200));
+    assert.equal(payload.ok,true);
+    assert.equal(payload.reconciled,true);
+    const report=payload.report;
+    assert.equal(Number(report.gross_revenue_cents),1200000);
+    assert.equal(Number(report.deposit_hold_cents),100000);
+    assert.equal(Number(report.deposit_retained_cents),20000);
+    assert.equal(Number(report.management_commission_cents),240000);
+    assert.equal(Number(report.operational_expenses_cents),150000);
+    assert.equal(Number(report.owner_payout_cents),830000);
+    assert.equal(Number(report.balance_difference_cents),0);
+    assert.equal(payload.journal.debitCents,payload.journal.creditCents);
+    assert.equal(payload.journal.debitCents,'2540000');
+    for(const kind of ['booking_revenue','deposit_hold','deposit_deduction','cleaning_expense','management_commission','owner_payout'])
+      assert.ok(payload.journal.entries.some(e=>e.entry_type===kind));
   });
 
   await check('AUX-no-unscoped-availability-audit',async()=>{
