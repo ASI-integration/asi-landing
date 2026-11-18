@@ -25,12 +25,26 @@ export async function GET(req: Request) {
   if (report.error || entries.error)
     return NextResponse.json({ ok: false, error: 'finance_report_unavailable' }, { status: 503 });
   if (!report.data) return NextResponse.json({ ok: false, error: 'finance_report_not_ready' }, { status: 404 });
-  const debit = (entries.data ?? []).reduce((sum,row)=>sum+Number(row.debit_cents),0);
-  const credit = (entries.data ?? []).reduce((sum,row)=>sum+Number(row.credit_cents),0);
-  const r = report.data;
-  const expected = Number(r.gross_revenue_cents)-Number(r.management_commission_cents)
-    -Number(r.operational_expenses_cents)+Number(r.deposit_retained_cents);
-  const reconciled = debit === credit && Number(r.balance_difference_cents) === 0
-    && Number(r.owner_payout_cents) === expected;
-  return NextResponse.json({ ok: reconciled, report: r, journal: { debitCents: debit, creditCents: credit, entries: entries.data }, reconciled }, { status: reconciled ? 200 : 422 });
+  // PostgreSQL bigint amounts must never be reconciled with floating-point math.
+  const toCents = (value: unknown): bigint => {
+    const s = String(value);
+    if (!/^-?[0-9]+$/.test(s)) throw new Error('invalid_ledger_amount');
+    return BigInt(s);
+  };
+  let debit: bigint, credit: bigint, expected: bigint, payout: bigint;
+  try {
+    debit = (entries.data ?? []).reduce((sum, row) => sum + toCents(row.debit_cents), 0n);
+    credit = (entries.data ?? []).reduce((sum, row) => sum + toCents(row.credit_cents), 0n);
+    const r = report.data;
+    expected = toCents(r.gross_revenue_cents) - toCents(r.management_commission_cents)
+      - toCents(r.operational_expenses_cents) + toCents(r.deposit_retained_cents);
+    payout = toCents(r.owner_payout_cents);
+    if (toCents(r.balance_difference_cents) !== 0n) throw new Error('balance_difference');
+  } catch {
+    return NextResponse.json({ ok: false, error: 'invalid_financial_values' }, { status: 422 });
+  }
+  const reconciled = debit === credit && payout === expected && (entries.data?.length ?? 0) >= 10;
+  return NextResponse.json({ ok: reconciled, report: report.data,
+    journal: { debitCents: debit.toString(), creditCents: credit.toString(), entries: entries.data },
+    reconciled }, { status: reconciled ? 200 : 422 });
 }
