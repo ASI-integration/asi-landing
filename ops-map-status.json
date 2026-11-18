@@ -10,7 +10,7 @@
     "pr669Merged": true
   },
   "header": {
-    "reason": "READY_FOR_DEMO — 100% G2–G6 acceptance PASS (изолированный no-send стенд; PR #670/#671 ещё Draft)",
+    "reason": "READY_FOR_DEMO — 100% G2–G6 acceptance PASS (изолированный no-send стенд; PR #670/#671/#672 merged; staging deployment pending)",
     "state": "ready_for_demo"
   },
   "health": {
@@ -46,5 +46,5 @@
     }
   ],
   "summary": "READY_FOR_DEMO: N01–N15, B01, T30 и финансы PASS. Дебет=кредит, no-send, очистка 0. Следующий этап — первые объекты (после ревью и merge PR).",
-  "updatedAt": "2026-11-18T17:50:52.055345+00:00"
+  "updatedAt": "2026-11-18T18:05:40.652622+00:00"
 }
