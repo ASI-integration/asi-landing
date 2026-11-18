@@ -154,6 +154,7 @@ try{
     assert.equal(Number(report.owner_payout_cents),830000);
     assert.equal(Number(report.balance_difference_cents),0);
     assert.equal(payload.journal.debitCents,payload.journal.creditCents);
+    assert.equal(payload.journal.debitCents,'2540000');
     for(const kind of ['booking_revenue','deposit_hold','deposit_deduction','cleaning_expense','management_commission','owner_payout'])
       assert.ok(payload.journal.entries.some(e=>e.entry_type===kind));
   });
