@@ -7,6 +7,35 @@ import { supabase } from '@/lib/supabase';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+// Deliberately conservative *per Node process* admission cap. No user-IP
+// headers are trusted. A multi-replica deployment must retain this guard AND
+// add a shared/edge limit before enabling the privileged RPC.
+const fixtureRateLimit = { windowStart: 0, used: 0 };
+const WINDOW_MS = 60_000;
+const MAX_CALLS_PER_WINDOW = 5;
+
+function consumeFixtureRateLimit(): number {
+  const now = Date.now();
+  // Fail closed if the clock or the in-memory limiter state is invalid.
+  if (!Number.isFinite(now) || !Number.isFinite(fixtureRateLimit.windowStart) ||
+      !Number.isInteger(fixtureRateLimit.used) || fixtureRateLimit.used < 0 ||
+      fixtureRateLimit.used > MAX_CALLS_PER_WINDOW || now < fixtureRateLimit.windowStart) {
+    return 60;
+  }
+  if (fixtureRateLimit.windowStart === 0 ||
+      now - fixtureRateLimit.windowStart >= WINDOW_MS) {
+    fixtureRateLimit.windowStart = now;
+    fixtureRateLimit.used = 0;
+  }
+  if (fixtureRateLimit.used >= MAX_CALLS_PER_WINDOW) {
+    return Math.max(1, Math.ceil(
+      (WINDOW_MS - (now - fixtureRateLimit.windowStart)) / 1000,
+    ));
+  }
+  fixtureRateLimit.used += 1;
+  return 0;
+}
+
 const forbiddenExternalEffects = () =>
   process.env.ASI_DEPLOYMENT_TIER !== 'staging' ||
   process.env.ASI_SYNTHETIC_NO_SEND !== 'YES' ||
@@ -50,7 +79,8 @@ export async function POST(req: Request) {
       !uuidPattern.test(allowedPropertyId) ||
       allowedRecordId !== pinnedId ||
       allowedAccountId !== pinnedAccountId ||
-      allowedPropertyId !== pinnedPropertyId) {
+      allowedPropertyId !== pinnedPropertyId ||
+      new Set([pinnedId, pinnedAccountId, pinnedPropertyId]).size !== 3) {
     return NextResponse.json({ ok: false, message: 'fixture_tenant_not_pinned' }, { status: 403 });
   }
   const origin = req.headers.get('origin');
@@ -81,6 +111,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: 'explicit_pinned_fixture_confirmation_required' }, { status: 400 });
   }
 
+  // Count only authenticated, correctly scoped request attempts. This
+  // synchronous limiter executes before any database/network RPC.
+  const retryAfter = consumeFixtureRateLimit();
+  if (retryAfter !== 0) {
+    return NextResponse.json({ ok: false, message: 'too_many_requests' }, {
+      status: 429, headers: { 'Retry-After': String(retryAfter) },
+    });
+  }
+
   let access: Awaited<ReturnType<typeof requireBookingOpsRouteAccess>>;
   try {
     access = await requireBookingOpsRouteAccess(auth.session, pinnedId);
@@ -88,8 +127,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: 'tenant_scope_unavailable' }, { status: 403 });
   }
   if (!access.actorId || !access.accountId || access.accountId === 'legacy' ||
+      !uuidPattern.test(access.accountId) || !uuidPattern.test(access.propertyId || '') ||
+      !uuidPattern.test(access.bookingId || '') ||
+      new Set([access.accountId, access.propertyId, access.bookingId]).size !== 3 ||
       access.accountId !== pinnedAccountId ||
-      !access.propertyId || access.propertyId !== pinnedPropertyId ||
+      access.propertyId !== pinnedPropertyId ||
       access.bookingId !== pinnedId) {
     return NextResponse.json({ ok: false, message: 'tenant_scope_unavailable' }, { status: 403 });
   }

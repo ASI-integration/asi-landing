@@ -561,6 +561,32 @@ jobs:
           })();
           NODE
 
+      - name: G2 acceptance fixture REAL disposable PostgreSQL isolation and rollback
+        run: |
+          set -euo pipefail
+          test "$ASI_REQUIRE_DISPOSABLE_PG" = 1
+          npx vitest run             src/lib/booking-ops/__tests__/acceptance-fixture.pg.integration.test.ts             --reporter=verbose 2>&1 | tee g2-acceptance-pg.out
+          if ! grep -Fq 'ASI_FIXTURE_PG_PROOF' g2-acceptance-pg.out; then
+            echo "G2 PostgreSQL proof missing or suite skipped"
+            exit 1
+          fi
+          node - <<'NODE'
+          const fs = require('fs');
+          const line = fs.readFileSync('g2-acceptance-pg.out','utf8')
+            .split(/\r?\n/).find(l=>l.includes('ASI_FIXTURE_PG_PROOF'));
+          if (!line) process.exit(1);
+          const proof = JSON.parse(line.slice(line.indexOf('ASI_FIXTURE_PG_PROOF') +
+            'ASI_FIXTURE_PG_PROOF'.length).trim());
+          const required = ['realRpc','wrongTenantDenied','nonsyntheticDenied',
+            'wrongRecordDenied','oneAuditOnly','oldOverloadReplaced',
+            'noPublicExecute','rollback'];
+          if (!required.every(k=>proof[k]===true) || proof.sharedDbTouched!==false) {
+            console.error('G2 PostgreSQL fixture proof mismatch',proof);
+            process.exit(1);
+          }
+          console.log('G2 PostgreSQL fixture proof verified');
+          NODE
+
       - name: Wave 0 guest-memory tenancy PostgreSQL migration integration
         id: wave0_guest_memory_pg
         run: |

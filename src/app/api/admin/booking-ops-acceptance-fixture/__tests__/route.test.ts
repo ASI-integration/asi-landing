@@ -33,7 +33,10 @@ const request = (payload: unknown = body(), origin = APP) => new Request(APP + '
 });
 
 describe('owner-scoped staging acceptance fixture authorization', () => {
+  let testClockIndex = 0;
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 10, 18, 12, 0, 0).getTime() + (++testClockIndex) * 61_000);
     vi.resetAllMocks();
     for (const [k, v] of Object.entries({
       NODE_ENV: 'production',
@@ -62,7 +65,10 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
     mocks.requireBookingOpsRecordScope.mockResolvedValue({});
     mocks.rpc.mockResolvedValue({ data: true, error: null });
   });
-  afterEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+  });
 
   it('marks only the owner-pinned record and persists through atomic audited RPC', async () => {
     const result = await POST(request());
@@ -79,6 +85,38 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
       p_allowed_account_id: OWNER_ACCOUNT,
       p_allowed_property_id: OWNER_PROPERTY,
     });
+  });
+  it('limits valid admin attempts to five per process per minute, then returns 429', async () => {
+    for (let n = 0; n < 5; n += 1) {
+      expect((await POST(request())).status).toBe(200);
+    }
+    const response = await POST(request());
+    expect(response.status).toBe(429);
+    expect(response.headers.get('Retry-After')).toMatch(/^[1-9][0-9]*$/);
+    expect(await response.json()).toMatchObject({ ok: false, message: 'too_many_requests' });
+    expect(mocks.rpc).toHaveBeenCalledTimes(5);
+    vi.setSystemTime(Date.now() + 60_001);
+    expect((await POST(request())).status).toBe(200);
+    expect(mocks.rpc).toHaveBeenCalledTimes(6);
+  });
+  it.each([
+    ['OPS_ACCEPTANCE_FIXTURE_ACCOUNT_ID', PINNED],
+    ['OPS_ACCEPTANCE_FIXTURE_PROPERTY_ID', OWNER_ACCOUNT],
+  ])('rejects UUIDs that overlap between fixture record/account/property: %s', async (key, value) => {
+    vi.stubEnv(key, value);
+    vi.stubEnv(key === 'OPS_ACCEPTANCE_FIXTURE_ACCOUNT_ID'
+      ? 'OPS_ACCEPTANCE_FIXTURE_ALLOWED_ACCOUNT_ID'
+      : 'OPS_ACCEPTANCE_FIXTURE_ALLOWED_PROPERTY_ID', value);
+    expect((await POST(request())).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it('rejects malformed UUID returned by real scope authorization before RPC', async () => {
+    mocks.requireBookingOpsRouteAccess.mockResolvedValueOnce({
+      actorId: 'actor-a', accountId: 'non-uuid', propertyId: OWNER_PROPERTY,
+      bookingId: PINNED,
+    });
+    expect((await POST(request())).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
   it('denies unverified admin access before any record lookup', async () => {
     mocks.requireOpsAdminSession.mockResolvedValueOnce({ error: new Response('denied', { status: 403 }) });
