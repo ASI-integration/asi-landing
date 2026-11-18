@@ -9,7 +9,11 @@
 -- SECURITY INVOKER. This template grants EXECUTE to no role.
 -- A separate owner-reviewed DB rollout must configure a least-privileged
 -- function caller. This source does not change the existing shared DB function.
--- The record pin intentionally prevents modifying arbitrary booking records.
+-- Allowed record/account/property IDs are mandatory UUID inputs supplied by
+-- a staging-only, separately reviewed, server-side configuration.
+-- Arguments themselves are NOT an independent trust boundary: only a
+-- dedicated least-privilege database role and reviewed deployment can be.
+-- The explicit owner pin prevents other records being selected by accident.
 -- Verified in the connected shared DB: a UNIQUE index exists on
 -- booking_ops_events(booking_ops_record_id, dedupe_key) for non-null dedupe keys;
 -- combined with the booking_ops_records FOR UPDATE lock, it prevents duplicate
@@ -20,21 +24,25 @@ ASI_FIXTURE_NOT_SQL_UNTIL_SEPARATE_OWNER_DB_REVIEW;
 -- Running this source file directly fails before CREATE OR REPLACE FUNCTION.
 BEGIN;
 CREATE OR REPLACE FUNCTION public.asi_mark_acceptance_fixture(
-  p_record_id uuid, p_account_id text, p_property_id text, p_actor_id text
+  p_record_id uuid, p_account_id text, p_property_id text, p_actor_id text,
+  p_allowed_record_id uuid, p_allowed_account_id uuid, p_allowed_property_id uuid
 ) RETURNS boolean LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
 DECLARE
   v public.booking_ops_records%ROWTYPE;
 BEGIN
-  IF p_record_id IS NULL OR nullif(trim(p_account_id),'') IS NULL
-     OR nullif(trim(p_property_id),'') IS NULL OR nullif(trim(p_actor_id),'') IS NULL THEN
+  IF p_record_id IS NULL OR p_allowed_record_id IS NULL
+     OR p_allowed_account_id IS NULL OR p_allowed_property_id IS NULL
+     OR nullif(trim(p_account_id),'') IS NULL
+     OR nullif(trim(p_property_id),'') IS NULL
+     OR nullif(trim(p_actor_id),'') IS NULL THEN
     RAISE EXCEPTION 'fixture_parameters_invalid';
   END IF;
-  -- Fail CLOSED before any row access for every non-fixture record/tenant/property.
-  -- All three values are exact and immutable for this single source candidate:
-  -- no other account, property or booking-ops record can ever be marked.
-  IF p_record_id IS DISTINCT FROM '__OWNER_PINNED_SYNTHETIC_RECORD_UUID__'::uuid
-     OR p_account_id IS DISTINCT FROM '__OWNER_PINNED_SYNTHETIC_ACCOUNT_UUID__'
-     OR p_property_id IS DISTINCT FROM '__OWNER_PINNED_SYNTHETIC_PROPERTY_UUID__' THEN
+  -- Reject mismatched allowed/actual IDs BEFORE reading or writing a row.
+  -- Target tenant IDs are TEXT in the existing schema; canonical UUID text
+  -- is compared to the mandatory UUID allowlist inputs without truncation.
+  IF p_record_id IS DISTINCT FROM p_allowed_record_id
+     OR p_account_id IS DISTINCT FROM p_allowed_account_id::text
+     OR p_property_id IS DISTINCT FROM p_allowed_property_id::text THEN
     RAISE EXCEPTION 'fixture_record_not_owner_pinned';
   END IF;
   -- The receipt is only safe if the unique dedupe constraint is present.
@@ -120,7 +128,10 @@ BEGIN
     'acceptance-fixture:'||p_record_id::text);
   RETURN true;
 END $$;
-REVOKE ALL ON FUNCTION public.asi_mark_acceptance_fixture(uuid,text,text,text)
+REVOKE ALL ON FUNCTION public.asi_mark_acceptance_fixture(uuid,text,text,text,uuid,uuid,uuid)
   FROM PUBLIC, anon, authenticated, service_role;
+-- The existing FOUR-argument RPC is NOT replaced by this SEVEN-argument
+-- candidate. The old overload must be audited/retired in a separate rollout;
+-- do not interpret this template as revoking its existing grants.
 -- NO EXECUTE GRANT. A separate approved activation step is mandatory.
 COMMIT;

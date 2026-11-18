@@ -15,11 +15,18 @@ describe('single-row SQL acceptance fixture: fail-closed source contract', () =>
 
   it('rejects every record, account or property except the three exact owner pins', () => {
     const ids = [
-      "p_record_id IS DISTINCT FROM '__OWNER_PINNED_SYNTHETIC_RECORD_UUID__'::uuid",
-      "p_account_id IS DISTINCT FROM '__OWNER_PINNED_SYNTHETIC_ACCOUNT_UUID__'",
-      "p_property_id IS DISTINCT FROM '__OWNER_PINNED_SYNTHETIC_PROPERTY_UUID__'",
+      'p_record_id IS DISTINCT FROM p_allowed_record_id',
+      'p_account_id IS DISTINCT FROM p_allowed_account_id::text',
+      'p_property_id IS DISTINCT FROM p_allowed_property_id::text',
     ];
     for (const id of ids) expect(sql).toContain(id);
+    for (const arg of [
+      'p_allowed_record_id uuid', 'p_allowed_account_id uuid',
+      'p_allowed_property_id uuid',
+      'p_allowed_record_id IS NULL', 'p_allowed_account_id IS NULL',
+      'p_allowed_property_id IS NULL',
+    ]) expect(sql).toContain(arg);
+    expect(sql).not.toContain('__OWNER_PINNED_SYNTHETIC_');
     const first = sql.indexOf(ids[0]);
     const reject = sql.indexOf("RAISE EXCEPTION 'fixture_record_not_owner_pinned'", first);
     const firstLookup = sql.indexOf('SELECT * INTO v');
@@ -59,5 +66,7 @@ describe('single-row SQL acceptance fixture: fail-closed source contract', () =>
     expect(sql).toContain('SECURITY INVOKER');
     expect(sql).not.toContain('GRANT EXECUTE ON FUNCTION');
     expect(sql).toContain('FROM PUBLIC, anon, authenticated, service_role;');
+    expect(sql).toContain('(uuid,text,text,text,uuid,uuid,uuid)');
+    expect(sql).toContain('old overload must be audited/retired'.replace('old', 'old'));
   });
 });

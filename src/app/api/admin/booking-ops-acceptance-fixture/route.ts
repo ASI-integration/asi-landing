@@ -23,7 +23,10 @@ export async function POST(req: Request) {
   if ('error' in auth) return auth.error;
   if (process.env.NODE_ENV !== 'production' ||
       forbiddenExternalEffects() ||
-      process.env.OPS_ACCEPTANCE_FIXTURE_MARKING_ENABLED !== 'true') {
+      process.env.OPS_ACCEPTANCE_FIXTURE_MARKING_ENABLED !== 'true' ||
+      // Deployment is forbidden until the new 7-argument RPC exists and
+      // its separate least-privilege caller has been independently verified.
+      process.env.OPS_ACCEPTANCE_FIXTURE_RPC_V2_VERIFIED !== 'YES') {
     return NextResponse.json({ ok: false, message: 'fixture_marking_disabled' }, { status: 403 });
   }
 
@@ -36,8 +39,17 @@ export async function POST(req: Request) {
   // candidate. Never rely on identifiers sourced only from a request/session.
   const pinnedAccountId = process.env.OPS_ACCEPTANCE_FIXTURE_ACCOUNT_ID;
   const pinnedPropertyId = process.env.OPS_ACCEPTANCE_FIXTURE_PROPERTY_ID;
+  const allowedRecordId = process.env.OPS_ACCEPTANCE_FIXTURE_ALLOWED_RECORD_ID;
+  const allowedAccountId = process.env.OPS_ACCEPTANCE_FIXTURE_ALLOWED_ACCOUNT_ID;
+  const allowedPropertyId = process.env.OPS_ACCEPTANCE_FIXTURE_ALLOWED_PROPERTY_ID;
   if (!pinnedAccountId || !pinnedPropertyId ||
-      !uuidPattern.test(pinnedAccountId) || !uuidPattern.test(pinnedPropertyId)) {
+      !allowedRecordId || !allowedAccountId || !allowedPropertyId ||
+      !uuidPattern.test(pinnedAccountId) || !uuidPattern.test(pinnedPropertyId) ||
+      !uuidPattern.test(allowedRecordId) || !uuidPattern.test(allowedAccountId) ||
+      !uuidPattern.test(allowedPropertyId) ||
+      allowedRecordId !== pinnedId ||
+      allowedAccountId !== pinnedAccountId ||
+      allowedPropertyId !== pinnedPropertyId) {
     return NextResponse.json({ ok: false, message: 'fixture_tenant_not_pinned' }, { status: 403 });
   }
   const origin = req.headers.get('origin');
@@ -93,6 +105,9 @@ export async function POST(req: Request) {
       p_account_id: access.accountId,
       p_property_id: access.propertyId,
       p_actor_id: access.actorId,
+      p_allowed_record_id: allowedRecordId,
+      p_allowed_account_id: allowedAccountId,
+      p_allowed_property_id: allowedPropertyId,
     });
     if (error) throw new Error('atomic_fixture_marking_failed');
     if (data !== true) throw new Error('atomic_fixture_marking_not_confirmed');

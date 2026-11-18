@@ -48,6 +48,10 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
       OPS_ACCEPTANCE_FIXTURE_RECORD_ID: PINNED,
       OPS_ACCEPTANCE_FIXTURE_ACCOUNT_ID: OWNER_ACCOUNT,
       OPS_ACCEPTANCE_FIXTURE_PROPERTY_ID: OWNER_PROPERTY,
+      OPS_ACCEPTANCE_FIXTURE_ALLOWED_RECORD_ID: PINNED,
+      OPS_ACCEPTANCE_FIXTURE_ALLOWED_ACCOUNT_ID: OWNER_ACCOUNT,
+      OPS_ACCEPTANCE_FIXTURE_ALLOWED_PROPERTY_ID: OWNER_PROPERTY,
+      OPS_ACCEPTANCE_FIXTURE_RPC_V2_VERIFIED: 'YES',
       NEXT_PUBLIC_APP_URL: APP,
     })) vi.stubEnv(k, v);
     mocks.requireOpsAdminSession.mockResolvedValue({ session: { userId: 'actor-a' } });
@@ -71,6 +75,9 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
     expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith('asi_mark_acceptance_fixture', {
       p_record_id: PINNED, p_account_id: OWNER_ACCOUNT,
       p_property_id: OWNER_PROPERTY, p_actor_id: 'actor-a',
+      p_allowed_record_id: PINNED,
+      p_allowed_account_id: OWNER_ACCOUNT,
+      p_allowed_property_id: OWNER_PROPERTY,
     });
   });
   it('denies unverified admin access before any record lookup', async () => {
@@ -79,7 +86,8 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
     expect(mocks.requireBookingOpsRouteAccess).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
-  it.each(['ASI_DEPLOYMENT_TIER','ASI_SYNTHETIC_NO_SEND','EMAIL_AUTO_SEND','EMAIL_DRAFT_ONLY','DRY_RUN_TELEGRAM_OUTBOUND','ALLOW_REAL_TELEGRAM_SYNTHETIC','YOOKASSA_ENABLED','OPS_ACCEPTANCE_FIXTURE_MARKING_ENABLED'])(
+  it.each(['ASI_DEPLOYMENT_TIER','ASI_SYNTHETIC_NO_SEND','EMAIL_AUTO_SEND','EMAIL_DRAFT_ONLY','DRY_RUN_TELEGRAM_OUTBOUND','ALLOW_REAL_TELEGRAM_SYNTHETIC','YOOKASSA_ENABLED','OPS_ACCEPTANCE_FIXTURE_MARKING_ENABLED',
+    'OPS_ACCEPTANCE_FIXTURE_RPC_V2_VERIFIED'])(
     'fails closed if %s is not in its approved state', async (variable) => {
       vi.stubEnv(variable, 'disabled');
       expect((await POST(request())).status).toBe(403);
@@ -120,6 +128,24 @@ describe('owner-scoped staging acceptance fixture authorization', () => {
       expect(mocks.rpc).not.toHaveBeenCalled();
     },
   );
+  it.each([
+    'OPS_ACCEPTANCE_FIXTURE_ALLOWED_RECORD_ID',
+    'OPS_ACCEPTANCE_FIXTURE_ALLOWED_ACCOUNT_ID',
+    'OPS_ACCEPTANCE_FIXTURE_ALLOWED_PROPERTY_ID',
+  ])('fails closed without required allowed UUID parameter %s', async (key) => {
+    vi.stubEnv(key, '');
+    expect((await POST(request())).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+  it.each([
+    'OPS_ACCEPTANCE_FIXTURE_ALLOWED_RECORD_ID',
+    'OPS_ACCEPTANCE_FIXTURE_ALLOWED_ACCOUNT_ID',
+    'OPS_ACCEPTANCE_FIXTURE_ALLOWED_PROPERTY_ID',
+  ])('rejects mismatched allowed UUID parameter %s', async (key) => {
+    vi.stubEnv(key, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    expect((await POST(request())).status).toBe(403);
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
   it('refuses a cross-tenant or cross-property record even if the session is authorized', async () => {
     mocks.requireBookingOpsRouteAccess.mockResolvedValueOnce({
       actorId: 'actor-a', accountId: OWNER_ACCOUNT,
