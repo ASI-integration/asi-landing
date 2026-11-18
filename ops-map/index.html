@@ -1,70 +1,155 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#07162b"><meta name="description" content="Публичная карта реального развития ASI.">
-<title>ASI — Карта развития</title>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#07182a">
+<meta name="description" content="ASI — простая карта развития: где мы начали, где сейчас и куда идём.">
+<title>ASI — Наш путь к автопилоту</title>
 <style>
-:root{color-scheme:dark;--bg:#071426;--surface:#10243d;--text:#f5fbff;--muted:#b3c6d7;--green:#6df0a9;--blue:#69b9ff;--amber:#ffc56b}*{box-sizing:border-box}
-body{margin:0;background:radial-gradient(ellipse at 13% -10%,#193e5d,transparent 53%),radial-gradient(ellipse at 100% 80%,#16394d,transparent 54%),var(--bg);color:var(--text);font-family:Inter,Arial,"Segoe UI",sans-serif;min-height:100vh}
-body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.16;background-image:linear-gradient(#79b8ec33 1px,transparent 1px),linear-gradient(90deg,#79b8ec33 1px,transparent 1px);background-size:48px 48px}
-.shell{position:relative;max-width:1480px;margin:auto;padding:44px 34px 56px}.brand{font-size:16px;letter-spacing:.26em;font-weight:900;color:var(--green);display:flex;align-items:center;gap:12px}.brand i{width:13px;height:13px;border-radius:50%;background:var(--green);box-shadow:0 0 19px #6df0a977}
-header{display:flex;align-items:flex-end;justify-content:space-between;gap:30px}h1{font-size:clamp(34px,4.1vw,68px);line-height:1.08;letter-spacing:-.048em;margin:19px 0 16px;max-width:800px}h1 strong{color:var(--green)}.subtitle{font-size:clamp(16px,1.4vw,21px);color:var(--muted);max-width:675px;line-height:1.47;margin:0}
-.status{background:#30281e;border:1px solid #b88741;border-radius:21px;padding:22px 25px;min-width:305px;max-width:358px;box-shadow:0 12px 34px #0004}.status.green{background:#143728;border-color:#57c88c}.status-title{font-size:clamp(18px,1.5vw,24px);font-weight:850;display:flex;align-items:center;gap:12px}.status-title i{width:16px;height:16px;border-radius:50%;background:var(--amber);box-shadow:0 0 16px #ffc56b77;flex-shrink:0}.status.green .status-title i{background:var(--green)}.status-text{margin:12px 0 0;color:#f5d9b1;font-size:16px;line-height:1.46}.status.green .status-text{color:#b6f6d1}
-.map{margin-top:55px;background:#0b1c31dc;border:1px solid #29455c;border-radius:28px;padding:32px 23px 25px;box-shadow:0 24px 70px #0005}.legend{display:flex;justify-content:space-between;align-items:center;gap:25px;margin:0 10px 26px}.legend-item{display:flex;align-items:center;gap:15px;font-weight:850;font-size:clamp(18px,1.7vw,24px)}.legend-item small{display:block;color:var(--muted);font-size:13px;line-height:1.4;font-weight:500;margin-top:4px}.symbol{width:16px;height:16px;border-radius:50%;flex-shrink:0}.symbol.green{background:var(--green);box-shadow:0 0 17px #6df0a977}.symbol.blue{background:var(--blue);box-shadow:0 0 17px #69b9ff77}
-.scroll{overflow-x:auto;padding:10px 3px 15px;scrollbar-color:#426078 #10243d}.columns{display:grid;grid-template-columns:repeat(5,minmax(205px,1fr));position:relative;min-width:1090px}.rail{position:absolute;height:5px;left:10%;right:10%;border-radius:20px;pointer-events:none}.rail.top{top:30px;background:linear-gradient(90deg,#71efaa,#46dca4)}.rail.bottom{bottom:73px;background:linear-gradient(90deg,#369dea,#62b8ff 35%,#ffc56b 46%,#36536e 60%,#36536e)}
-.stage{z-index:1;display:flex;flex-direction:column;align-items:center;text-align:center;padding:0 12px;min-height:371px}.node{width:63px;height:63px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:900;z-index:2;flex-shrink:0}.ideal-node{color:#09271a;background:var(--green);box-shadow:0 0 0 8px #6df0a91c,0 0 28px #6df0a955}.step-title{font-size:20px;line-height:1.19;font-weight:850;letter-spacing:-.025em;min-height:49px;margin:29px 0 12px}.ideal-desc{color:#bbded2;font-size:15px;line-height:1.38;min-height:68px;max-width:210px;margin:0}
-.step-card{width:100%;border-radius:16px;background:linear-gradient(155deg,#173753,#102439);border:1px solid #365779;min-height:87px;margin-top:13px;padding:15px 11px;display:flex;flex-direction:column;gap:8px;justify-content:center}.step-card p{font-size:15px;line-height:1.37;margin:0;color:#d4e7f5}.step-card strong{font-size:17px;color:var(--blue)}.step-card.next strong{color:var(--amber)}.step-card.done{border-color:#3b8b72;background:linear-gradient(155deg,#103a30,#112c3b)}.step-card.done strong{color:var(--green)}
-.reality-wrap{margin-top:auto;display:flex;align-items:center;flex-direction:column;padding-top:22px;position:relative}.reality-node{width:62px;height:62px;background:#173b58;border:3px solid #6bbaff;color:#a1d7ff;box-shadow:0 0 0 7px #69b9ff14}.reality-node.done{background:#2f8c71;border-color:var(--green);color:#fff}.reality-node.future{border-color:#54728f;color:#8ba8c0;background:#132a40}.reality-node.current{width:70px;height:70px;background:#a76e23;border-color:var(--amber);color:#fff;animation:pulse 2s ease-in-out infinite}.here{height:22px;font-size:15px;font-weight:900;color:var(--amber);margin-top:9px;letter-spacing:.08em}.meta{display:flex;justify-content:space-between;gap:15px;color:#a8c5d7;padding:20px 10px 0;font-size:14px}.bottom{display:flex;justify-content:space-between;gap:24px;align-items:center;margin-top:24px}.bottom span{font-size:15px;color:#a9c1d5}.bottom a{color:#9cd9ff;text-decoration:none;font-size:15px;font-weight:650}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 7px #ffc56b21,0 0 25px #ffcb6f55}50%{box-shadow:0 0 0 16px #ffc56b12,0 0 48px #ffcb6f99}}
-@media(max-width:1000px){header{flex-direction:column;align-items:stretch}.status{max-width:none}.shell{padding:30px 20px 50px}.map{margin-top:35px}.legend{flex-wrap:wrap}.meta{flex-wrap:wrap}}
-@media(max-width:620px){.shell{padding:25px 14px}.brand{font-size:13px}.map{padding:24px 10px;border-radius:21px}.legend-item{font-size:17px}.columns{min-width:1050px}.bottom{flex-wrap:wrap}}@media(prefers-reduced-motion:reduce){.reality-node.current{animation:none}}
-</style></head>
-<body><main class="shell">
-<header><div><div class="brand"><i></i>ASI GLOBAL · КАРТА РАЗВИТИЯ</div><h1>От первых задач —<br>к <strong>полному автопилоту</strong></h1><p class="subtitle">Два маршрута. Сверху — идеальная система. Снизу — то, что мы действительно прошли, где находимся и что дальше.</p></div>
-<section class="status" id="systemStatus" aria-live="polite"><div class="status-title"><i></i><span id="stateTitle">Проверяем состояние системы</span></div><p class="status-text" id="stateReason">Получаем подтверждённые данные…</p></section></header>
-<section class="map" aria-label="Карта развития проекта">
-<div class="legend"><div class="legend-item"><span class="symbol green"></span><div>Эталонный автопилот<small>К чему мы идём</small></div></div><div class="legend-item"><span class="symbol blue"></span><div>Наш реальный путь<small>Что подтверждено на практике</small></div></div></div>
-<div class="scroll"><div class="columns" id="columns"><div class="rail top"></div><div class="rail bottom"></div></div></div>
-<div class="meta"><span id="progressText">Получаем данные…</span><span id="updatedText">Источник: GitHub и сервер ASI</span></div></section>
-<footer class="bottom"><span>Карта проверяет обновления каждые 15 секунд. Показаны только подтверждённые события.</span><a href="https://asi-global.ru" target="_blank" rel="noopener noreferrer">Основной сайт ASI</a></footer>
+:root{color-scheme:dark;--bg:#071728;--panel:#10283f;--white:#f5fbff;--soft:#c6daea;--green:#73f3ad;--blue:#68bcff;--gold:#ffca77}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 10% -15%,#1c4362 0%,transparent 55%),radial-gradient(ellipse at 95% 100%,#12364e 0%,transparent 55%),var(--bg);color:var(--white);font-family:Inter,system-ui,"Segoe UI",Arial,sans-serif}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;background:linear-gradient(#91b9db0b 1px,transparent 1px),linear-gradient(90deg,#91b9db0b 1px,transparent 1px);background-size:54px 54px}
+.container{position:relative;max-width:1440px;margin:0 auto;padding:32px clamp(18px,3.3vw,55px) 46px}
+.masthead{display:flex;justify-content:space-between;gap:28px;align-items:flex-end}
+.eyebrow{color:var(--green);letter-spacing:.19em;text-transform:uppercase;font-size:clamp(14px,1.25vw,18px);font-weight:900}
+h1{margin:14px 0 10px;font-size:clamp(40px,5.9vw,84px);line-height:1;letter-spacing:-.05em;font-weight:950}
+h1 em{color:var(--green);font-style:normal}
+.intro{font-size:clamp(18px,1.7vw,24px);color:var(--soft);line-height:1.35;margin:15px 0 0;max-width:650px}
+.status{background:#302717;border:2px solid #a67f40;border-radius:24px;min-width:min(100%,360px);max-width:400px;padding:18px 23px;box-shadow:0 10px 35px #0003}
+.status.green{background:#133525;border-color:#4e9b70}
+.status-label{font-size:clamp(21px,1.7vw,26px);font-weight:900;line-height:1.15}
+.status-text{color:#ffdfa9;font-size:clamp(16px,1.3vw,19px);line-height:1.4;margin:11px 0 0}.status.green .status-text{color:#c0f7d4}
+.paths{display:flex;flex-direction:column;gap:26px;margin-top:34px}
+.route{border-radius:32px;padding:clamp(22px,2.4vw,36px) clamp(19px,2.8vw,41px) clamp(26px,2.7vw,38px);background:#0d2338c9;border:1px solid #314e65;box-shadow:0 22px 48px #0002;overflow:hidden}
+.route-ideal{border-color:#376f59;background:linear-gradient(140deg,#102d2bca,#0e2536ba)}
+.route-real{border-color:#365d80;background:linear-gradient(140deg,#102b48,#0c2338)}
+.route-title{display:flex;align-items:center;gap:17px;margin:0 0 24px;color:var(--green);font-size:clamp(22px,2.25vw,33px);font-weight:930;letter-spacing:-.02em}
+.route-real .route-title{color:var(--blue)}
+.route-title small{font-size:clamp(14px,1.1vw,17px);font-weight:500;color:var(--soft);letter-spacing:0}
+.line-body{position:relative}
+.labels{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px;position:relative;z-index:2}
+.point-label{min-height:98px;padding:0 10px;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:7px}
+.point-label:first-child{text-align:left;align-items:flex-start;padding-left:0}
+.point-label:last-child{text-align:right;align-items:flex-end;padding-right:0}
+.point-label strong{font-size:clamp(17px,1.7vw,25px);line-height:1.13;font-weight:900;letter-spacing:-.018em}
+.point-label span{font-size:clamp(13px,1.1vw,17px);color:var(--soft);line-height:1.25;max-width:235px}
+.route-real .point-label strong{color:#d9eafc}
+.route-real .point-label.active strong{color:var(--gold)}
+.route-real .point-label.future strong{color:#91acc3}
+.line-track{height:13px;position:relative;border-radius:30px;overflow:visible;margin:18px 5px 22px;box-shadow:0 0 0 6px #ffffff06}
+.line-ideal{background:linear-gradient(90deg,#74f4b2,#53c890);box-shadow:0 0 17px #6bea9c55,0 0 0 6px #78eda910}
+.line-ideal:after{content:"";position:absolute;right:-4px;top:50%;transform:translateY(-50%) rotate(45deg);width:13px;height:13px;border-top:5px solid var(--green);border-right:5px solid var(--green)}
+.line-real{background:repeating-linear-gradient(90deg,#2a4964 0 32px,transparent 32px 43px);background-color:#122b42}
+.line-fill{height:100%;width:var(--fill,49%);background:linear-gradient(90deg,#2f88f4 0%,#66bafe 65%,#ffc978 100%);border-radius:40px;box-shadow:0 0 19px #64a8f277}
+.current-marker{position:absolute;top:50%;left:var(--fill,49%);height:49px;width:8px;background:var(--gold);border-radius:8px;transform:translate(-50%,-50%);box-shadow:0 0 19px #ffce73c0,0 0 0 8px #ffd0771e;animation:glow 2s ease-in-out infinite;z-index:3}
+.current-flag{position:absolute;left:var(--fill,49%);top:27px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;text-align:center;gap:2px;color:var(--gold);font-size:clamp(17px,1.8vw,27px);font-weight:950;letter-spacing:.01em;white-space:nowrap;z-index:5}
+.current-flag small{font-size:clamp(13px,1.15vw,17px);font-weight:800;letter-spacing:0;color:#f4dbae}
+.route-real .line-body{padding-bottom:72px}
+.route-bottom{display:flex;align-items:flex-end;justify-content:space-between;gap:15px;padding-top:0;color:var(--soft);font-size:clamp(16px,1.22vw,18px)}
+.route-bottom strong{color:var(--white);font-size:clamp(18px,1.55vw,23px);font-weight:850}
+.route-bottom .next strong{color:var(--gold)}
+.bottom-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:16px 25px;margin-top:25px;color:#b0c5d6;font-size:15px}
+.bottom-bar a{color:#a3daff;text-decoration:none}.bottom-bar a:hover{text-decoration:underline}
+@keyframes glow{0%,100%{box-shadow:0 0 19px #ffce73c0,0 0 0 8px #ffd0771e}50%{box-shadow:0 0 37px #ffce73ff,0 0 0 17px #ffd07710}}
+@media(max-width:980px){.masthead{align-items:stretch;flex-direction:column}.status{max-width:none}.point-label strong{font-size:19px}.point-label span{font-size:13px}.route{padding:25px 18px}.route-title{flex-wrap:wrap}.route-bottom{gap:15px}}
+@media(max-width:720px){
+.container{padding:24px 13px 30px}h1{font-size:clamp(39px,10vw,57px)}.intro{font-size:18px}.status{padding:20px;border-radius:20px}.paths{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:24px;align-items:stretch}
+.route{padding:22px 13px 19px;border-radius:22px;min-width:0;overflow:visible}.route-title{font-size:clamp(18px,4.9vw,24px);line-height:1.15;min-height:85px;align-items:flex-start;flex-direction:column;gap:8px}.route-title small{font-size:13px;line-height:1.32}
+.line-body{position:relative;padding:6px 0 0 23px}.labels{display:flex;flex-direction:column;gap:0}.point-label,.point-label:first-child,.point-label:last-child{min-height:108px;align-items:flex-start;text-align:left;justify-content:center;padding:8px 0 8px 5px;gap:8px}.point-label strong{font-size:clamp(16px,4.1vw,22px);line-height:1.12;overflow-wrap:anywhere}.point-label span{font-size:clamp(12px,3.2vw,15px);line-height:1.25}
+.line-track{position:absolute;left:0;top:6px;bottom:6px;width:8px;height:auto;margin:0;right:auto;border-radius:20px}.line-ideal:after{right:auto;top:auto;left:50%;bottom:-4px;transform:translateX(-50%) rotate(135deg);width:11px;height:11px;border-width:4px}
+.line-fill{width:100%;height:var(--fill,49%)}.current-marker{top:var(--fill,49%);left:50%;height:8px;width:38px;transform:translate(-50%,-50%)}.current-flag{display:none}
+.route-real .line-body{padding-bottom:0}.point-label.active strong:before{content:"МЫ СЕЙЧАС";display:block;color:var(--gold);font-size:clamp(15px,3.8vw,18px);letter-spacing:.04em;line-height:1.5}
+.route-bottom{display:none}.bottom-bar{font-size:13px;margin-top:22px}
+}
+@media(prefers-reduced-motion:reduce){.current-marker{animation:none}}
+</style>
+</head>
+<body>
+<main class="container">
+<header class="masthead">
+  <div><div class="eyebrow">ASI GLOBAL · КАРТА РАЗВИТИЯ</div><h1>Наш путь<br>к <em>автопилоту</em></h1><p class="intro">Где начали. Где мы сейчас. Куда идём.</p></div>
+  <section class="status" id="systemStatus" aria-live="polite"><div class="status-label" id="systemTitle">Проверяем состояние</div><p class="status-text" id="systemReason">Загружаем подтверждённый прогресс.</p></section>
+</header>
+<div class="paths">
+<section class="route route-ideal" aria-label="Идеальный путь">
+  <h2 class="route-title">ИДЕАЛЬНЫЙ ПУТЬ <small>Так должна работать полностью самостоятельная система</small></h2>
+  <div class="line-body">
+    <div class="labels">
+      <div class="point-label"><strong>Основа</strong><span>Всё соединено</span></div>
+      <div class="point-label"><strong>Задачи идут сами</strong><span>Без диспетчера</span></div>
+      <div class="point-label"><strong>Весь бизнес под контролем</strong><span>От заявки до отчёта</span></div>
+      <div class="point-label"><strong>Реальные объекты</strong><span>Автопилот в действии</span></div>
+      <div class="point-label"><strong>Новые направления</strong><span>Один движок — много ниш</span></div>
+    </div>
+    <div class="line-track line-ideal" role="img" aria-label="Непрерывный путь от основы до масштабирования"></div>
+  </div>
+  <div class="route-bottom"><span>НАЧАЛО</span><strong>Полный автопилот — цель</strong></div>
+</section>
+<section class="route route-real" aria-label="Наш настоящий путь">
+  <h2 class="route-title">НАШ РЕАЛЬНЫЙ ПУТЬ <small>Только то, что действительно подтверждено</small></h2>
+  <div class="line-body">
+    <div class="labels" id="realLabels">
+      <div class="point-label"><strong>Начали</strong></div>
+      <div class="point-label"><strong>Конвейер</strong></div>
+      <div class="point-label"><strong>Проверка аренды</strong></div>
+      <div class="point-label"><strong>Первый пилот</strong></div>
+      <div class="point-label"><strong>Масштабирование</strong></div>
+    </div>
+    <div class="line-track line-real" id="realTrack" style="--fill:49%" role="img" aria-label="Наш подтверждённый прогресс">
+      <div class="line-fill"></div>
+      <div class="current-marker"></div>
+      <div class="current-flag" aria-hidden="true"><span>МЫ СЕЙЧАС</span><small id="currentFlagText">Конвейер почти готов</small></div>
+    </div>
+  </div>
+  <div class="route-bottom"><span>НАЧАЛИ С ОСНОВЫ</span><div class="next">ДАЛЬШЕ: <strong id="nextText">Полная проверка аренды</strong></div></div>
+</section>
+</div>
+<footer class="bottom-bar"><span id="updateText">Обновляем по подтверждённым событиям GitHub</span><span>Обновление без перезагрузки каждые 15 секунд</span><a href="https://asi-global.ru" target="_blank" rel="noopener noreferrer">Сайт ASI</a></footer>
 </main>
 <script>
 "use strict";
-const fixed=[
-{icon:"◈",title:"Старт и фундамент",ideal:"Ядро, память и подключённые исполнители",detail:"Создана основа для работы"},
-{icon:"↔",title:"Автоматический конвейер",ideal:"Задачи проходят проверки и выпуск без диспетчера",detail:"Система контроля качества и релизов"},
-{icon:"✓",title:"Сквозная проверка бизнеса",ideal:"Аренда проверяется от обращения до финального отчёта",detail:"Безопасный тест всего цикла"},
-{icon:"⌂",title:"Боевой пилот",ideal:"Объекты работают под контролем управляющего",detail:"Запуск первых реальных объектов"},
-{icon:"∞",title:"Масштабирование вертикалей",ideal:"Новые ниши разворачиваются на готовом движке",detail:"Отели, прокат, клиники"}
+const labels=[
+ {name:"Начали",description:"Ядро и база готовы"},
+ {name:"Конвейер",description:"Код проверяется и выпускается"},
+ {name:"Весь цикл аренды",description:"Тест от заявки до уборки"},
+ {name:"Первые объекты",description:"Боевой пилот впереди"},
+ {name:"Новые направления",description:"Масштабирование впереди"}
 ];
-const el=id=>document.getElementById(id);
+const byId=id=>document.getElementById(id);
 function render(data){
-if(!Array.isArray(data.stages)||data.stages.length!==5)throw Error("Неверный формат");
-const ok=data.header&&data.header.state==="autonomous";
-el("systemStatus").classList.toggle("green",ok);
-el("stateTitle").textContent=ok?"Система работает автономно":"Требуется 1 решение владельца";
-el("stateReason").textContent=String(data.header?.reason||"Подтвердить следующий безопасный шаг");
-const columns=el("columns");columns.querySelectorAll("article").forEach(n=>n.remove());
-for(let i=0;i<5;i++){
-const s=data.stages[i]||{},f=fixed[i];const p=Math.max(0,Math.min(100,Number(s.percent)||0));const done=p===100,here=i+1===data.currentStage;
-const article=document.createElement("article");article.className="stage";
-const top=document.createElement("div");top.className="node ideal-node";top.textContent=f.icon;
-const title=document.createElement("h2");title.className="step-title";title.textContent=f.title;
-const ideal=document.createElement("p");ideal.className="ideal-desc";ideal.textContent=f.ideal;
-const card=document.createElement("div");card.className="step-card"+(done?" done":here?" next":"");
-const label=document.createElement("strong");label.textContent=done?"Пройдено":p>0?"Выполнено на "+p+"%":here?"Следующий шаг":"Впереди";
-const detail=document.createElement("p");detail.textContent=String(s.detail||f.detail);card.append(label,detail);
-const bottom=document.createElement("div");bottom.className="reality-wrap";
-const point=document.createElement("div");point.className="node reality-node "+(here?"current":done?"done":"future");point.textContent=here?"●":done?"✓":String(i+1);
-const hereText=document.createElement("div");hereText.className="here";hereText.textContent=here?"МЫ ЗДЕСЬ":"";
-bottom.append(point,hereText);article.append(top,title,ideal,card,bottom);columns.append(article);
-}
-el("progressText").textContent=String(data.summary||"От фундамента к пилоту");
-const t=data.updatedAt?new Date(data.updatedAt):null;
-el("updatedText").textContent=t&&!isNaN(t)?"Обновлено: "+new Intl.DateTimeFormat("ru-RU",{dateStyle:"short",timeStyle:"short"}).format(t):"Источник: GitHub и сервер ASI";
+ if(!Array.isArray(data.stages)||data.stages.length!==5)throw new Error("Данные не готовы");
+ const autonomous=data.header&&data.header.state==="autonomous"&&data.health&&data.health.verifiedAutonomous===true;
+ byId("systemStatus").classList.toggle("green",!!autonomous);
+ byId("systemTitle").textContent=autonomous?"Система работает автономно":"Требуется 1 решение владельца";
+ byId("systemReason").textContent=String(data.header?.reason||"Подтвердить следующий безопасный шаг");
+ const percent=n=>Math.max(0,Math.min(100,Number(n)||0));
+ const stages=data.stages;
+ const raw=Number(data.currentStage),current=Number.isInteger(raw)?Math.min(5,Math.max(1,raw)):2;
+ const fraction=percent(stages[current-1]?.percent)/100;
+ const fill=Math.max(0,Math.min(100,(current-1+fraction)/4*100));
+ const track=byId("realTrack");track.style.setProperty("--fill",fill+"%");
+ track.setAttribute("aria-label","Наш прогресс: этап "+current+" из 5");
+ const all=byId("realLabels");all.replaceChildren();
+ labels.forEach((entry,index)=>{
+   const node=document.createElement("div");node.className="point-label"+(index+1===current?" active":index+1>current?" future":"");
+   const title=document.createElement("strong");title.textContent=entry.name;
+   const sub=document.createElement("span");sub.textContent=String(stages[index]?.detail||entry.description);
+   node.append(title,sub);all.append(node);
+ });
+ const currentPercent=percent(stages[current-1]?.percent);
+ byId("currentFlagText").textContent=current===2?"Конвейер готов на "+currentPercent+"%":current===3?"Проверяем цикл аренды":current===1?"Фундамент проекта":current===4?"Первые объекты": "Новые направления";
+ byId("nextText").textContent=current<5?labels[current].name:"Проверенные новые проекты";
+ const date=data.updatedAt?new Date(data.updatedAt):null;
+ byId("updateText").textContent=date&&!isNaN(date)?"Последняя проверка: "+new Intl.DateTimeFormat("ru-RU",{dateStyle:"short",timeStyle:"short"}).format(date):"Подтверждённый прогресс ASI";
 }
 async function refresh(){
-try{const response=await fetch("./ops-map-status.json?t="+Date.now(),{cache:"no-store"});if(!response.ok)throw Error(String(response.status));render(await response.json());}
-catch(e){el("stateTitle").textContent="Проверяем состояние системы";el("stateReason").textContent="Свежие данные временно недоступны."}
+ try{const result=await fetch("./ops-map-status.json?now="+Date.now(),{cache:"no-store"});if(!result.ok)throw new Error("Временная ошибка");render(await result.json())}
+ catch(_){byId("systemTitle").textContent="Проверяем состояние";byId("systemReason").textContent="Свежие данные временно недоступны"}
 }
 refresh();setInterval(refresh,15000);
-</script></body></html>
+</script>
+</body>
+</html>
