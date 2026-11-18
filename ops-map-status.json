@@ -1,5 +1,5 @@
 {
-  "currentStage": 3,
+  "currentStage": 4,
   "facts": {
     "lastClosedAt": "2026-11-18T13:35:14Z",
     "lastClosedMerged": true,
@@ -10,8 +10,8 @@
     "pr669Merged": true
   },
   "header": {
-    "reason": "BLOCKED_B01_T30 — N01–N15 PASS; браузер не проверен, T30 не выполнен",
-    "state": "owner"
+    "reason": "READY_FOR_DEMO — 100% G2–G6 acceptance PASS (изолированный no-send стенд; PR #670/#671 ещё Draft)",
+    "state": "ready_for_demo"
   },
   "health": {
     "stagingAlive": true,
@@ -33,11 +33,11 @@
       "percent": 100
     },
     {
-      "detail": "BLOCKED_B01_T30: незавершённые проверки",
-      "percent": 0
+      "detail": "READY_FOR_DEMO: 15/15 N, B01, T30, Finance Report PASS; no-send; zero residual rows",
+      "percent": 100
     },
     {
-      "detail": "Реальные объекты ещё не запущены",
+      "detail": "Следующий открытый этап: первые объекты (после ревью и merge); реальные объекты ещё не запущены",
       "percent": 0
     },
     {
@@ -45,6 +45,6 @@
       "percent": 0
     }
   ],
-  "summary": "Выпущено 4 из 4 ключевых изменений. Проверяем весь цикл аренды.",
-  "updatedAt": "2026-11-18T16:15:05.052305+00:00"
+  "summary": "READY_FOR_DEMO: N01–N15, B01, T30 и финансы PASS. Дебет=кредит, no-send, очистка 0. Следующий этап — первые объекты (после ревью и merge PR).",
+  "updatedAt": "2026-11-18T16:19:40.822091+00:00"
 }
