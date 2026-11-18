@@ -113,6 +113,23 @@ class PublisherNegativeTests(unittest.TestCase):
         self.assertIn("PR665_INDEPENDENT_REVIEW_MISSING",blockers)
         self.assertIn("PR665_NATIVE_CI_NOT_PASSED",blockers)
 
+    def test_merged_publisher_with_cleared_decision_still_requires_exact_review(self):
+        import base64
+        source="approved publisher source\n"
+        head="b"*40
+        pp={"state":"MERGED","isDraft":False,"reviewDecision":"",
+            "headRefOid":head,"baseRefName":"main","author":{"login":"author"}}
+        accepted=[{"state":"APPROVED","commit_id":head,"user":{"login":"independent"}}]
+        entry={"content":base64.b64encode(source.encode()).decode()}
+        ci={"workflow_runs":[{"name":"PR Validation","head_sha":head,
+                               "event":"pull_request","conclusion":"success"}]}
+        with patch.object(p,"gh",side_effect=[pp,accepted,entry,ci]), \
+             patch.object(p.pathlib.Path,"read_text",return_value=source):
+            self.assertEqual(p.verify_publisher_review(),[])
+        with patch.object(p,"gh",side_effect=[pp,[],entry,ci]), \
+             patch.object(p.pathlib.Path,"read_text",return_value=source):
+            self.assertIn("PR665_INDEPENDENT_REVIEW_MISSING",p.verify_publisher_review())
+
     def test_privileged_publisher_source_drift_blocked(self):
         import base64
         pp={"state":"MERGED","isDraft":False,"reviewDecision":"APPROVED",

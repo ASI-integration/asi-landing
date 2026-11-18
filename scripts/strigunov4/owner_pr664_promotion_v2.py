@@ -149,7 +149,9 @@ def verify_publisher_review():
     blockers=[]
     if pp.get("state")!="MERGED" or pp.get("isDraft") is not False or pp.get("baseRefName")!="main":
         blockers.append("PR665_PUBLISHER_NOT_MERGED_TO_MAIN")
-    if pp.get("reviewDecision")!="APPROVED":
+    # GitHub clears reviewDecision after merge; exact independent reviews below
+    # remain mandatory and are stronger than a merged PR's presentation field.
+    if pp.get("state")!="MERGED" and pp.get("reviewDecision")!="APPROVED":
         blockers.append("PR665_PUBLISHER_NOT_APPROVED")
     reviews=gh("api",f"repos/{repo}/pulls/665/reviews","--paginate")
     author=(pp.get("author") or {}).get("login")
