@@ -3,11 +3,6 @@ import {parseIcal676,parseOtaWebhook676,verifyIngressSignature676,importInbound6
 import {postgresIngressStore676,readBoundedText676} from '@/lib/booking-ops/provider-gateway-store-676';
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
-/**
- * Server-configured one-source webhook. No user-supplied tenant or property ID.
- * Authenticated HMAC input is stored only as PENDING REVIEW, never confirmed
- * reservations. Provider HTTP polling/OTA writes are explicitly not enabled.
- */
 export async function POST(request:Request):Promise<NextResponse>{
  const env=process.env;
  if(env.ASI_SYNTHETIC_NO_SEND!=='YES' || env.ASI_PROVIDER_676_ENABLED!=='YES'){

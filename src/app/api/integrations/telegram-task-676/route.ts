@@ -3,11 +3,6 @@ import {receiveWorkerCallback676} from '@/lib/booking-ops/telegram-task-gateway-
 import {postgresTelegramStore676,readBoundedText676} from '@/lib/booking-ops/provider-gateway-store-676';
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
-/**
- * Telegram webhook ONLY. The update must carry the configured secret header
- * and match enabled DB binding + task assignment + nonce + update_id.
- * No response invokes Telegram or permits external sends.
- */
 export async function POST(request:Request):Promise<NextResponse>{
  const env=process.env;
  if(env.ASI_SYNTHETIC_NO_SEND!=='YES' || env.ASI_TELEGRAM_676_ENABLED!=='YES'){

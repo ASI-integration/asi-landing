@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS public.asi_telegram_outbox_676 (
   task_id uuid PRIMARY KEY REFERENCES public.ops_tasks(id),
   account_id uuid NOT NULL,property_id uuid NOT NULL,
   user_id uuid NOT NULL,chat_id bigint NOT NULL,
+  FOREIGN KEY(account_id,property_id,user_id) REFERENCES public.asi_telegram_bindings_676(account_id,property_id,user_id),
   nonce_hash text NOT NULL CHECK(nonce_hash ~ '^[a-f0-9]{64}$'),
   message_text text NOT NULL CHECK(length(message_text) BETWEEN 1 AND 4096),
   send_status text NOT NULL DEFAULT 'queued_dry_run'
@@ -154,6 +155,8 @@ BEGIN
  JOIN public.ops_tasks t ON t.id=o.task_id WHERE o.task_id=p_task FOR UPDATE OF o,t;
  IF NOT FOUND THEN RETURN 'not_assigned';END IF;
  IF NOT EXISTS(SELECT 1 FROM public.asi_telegram_bindings_676 b
+   JOIN public.properties p ON p.id=b.property_id AND p.account_id=b.account_id
+   JOIN public.ops_tasks t ON t.id=p_task AND t.property_id=b.property_id::text AND t.assigned_to=b.user_id::text
    WHERE b.account_id=rowdata.account_id AND b.property_id=rowdata.property_id
     AND b.user_id=rowdata.user_id AND b.chat_id=p_chat AND b.telegram_user_id=p_from AND b.enabled)
   OR rowdata.chat_id<>p_chat OR rowdata.nonce_hash<>p_nonce THEN RETURN 'forbidden';END IF;

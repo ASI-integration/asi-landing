@@ -1,7 +1,3 @@
-/**
- * #676 database-bound adapters. Server-only. Nothing here connects to a
- * provider; SQL functions must exist and accept only service_role.
- */
 import { supabase } from '@/lib/supabase';
 import type { IngressStore676 } from './provider-ingress-676';
 import type { WorkerGatewayStore676 } from './telegram-task-gateway-676';
