@@ -1,5 +1,3 @@
--- Synthetic, fixture-only #676 transaction test, appended after migration
--- DDL in a *single* outer BEGIN; runner appends ROLLBACK. No provider calls.
 INSERT INTO public.accounts(id,name) VALUES ('00000000-0000-4000-8000-000000006761','E2E676 tenant');
 INSERT INTO public.users(id,email,password_hash) VALUES ('00000000-0000-4000-8000-000000006763','e2e676-operator@example.invalid','synthetic-no-login');
 INSERT INTO public.account_members(account_id,user_id,role) VALUES ('00000000-0000-4000-8000-000000006761','00000000-0000-4000-8000-000000006763','operator');
@@ -70,4 +68,3 @@ BEGIN
  RAISE NOTICE 'PASS_TELEGRAM_NO_SEND_ASSIGNMENT_CALLBACK_REPLAY_CLOSE';
 END $test$;
 RESET ROLE;
--- No COMMIT: outer transaction is rolled back by the runner.

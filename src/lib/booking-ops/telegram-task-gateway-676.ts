@@ -1,8 +1,3 @@
-/**
- * #676 worker Bot API adapter. All provider sends are DENIED by default.
- * Incoming callbacks never trust a claimed role/account/user from Telegram JSON:
- * DB binding + task assignment are checked atomically by the RPC/storage layer.
- */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
 export type WorkerAction676='accept'|'close';

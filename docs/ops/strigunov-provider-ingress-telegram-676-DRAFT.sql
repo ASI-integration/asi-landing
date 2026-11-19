@@ -1,7 +1,3 @@
--- #676 provider ingress & Telegram task gateway. REVIEW-ONLY MIGRATION.
--- No OTA publishes, no outbound messages, no Supabase production migration.
--- Tables hold safe normalized metadata and a durable review/outbox queue;
--- they NEVER insert confirmed reservations into booking_ops_records.
 BEGIN;
 CREATE TABLE IF NOT EXISTS public.asi_ingress_events_676 (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -57,7 +53,6 @@ CREATE TABLE IF NOT EXISTS public.asi_telegram_outbox_676 (
 CREATE TABLE IF NOT EXISTS public.asi_telegram_update_ids_676 (
   account_id uuid NOT NULL, update_id bigint NOT NULL, task_id uuid NOT NULL, processed_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(account_id,update_id)
 );
--- Defense in depth: these tables cannot be queried directly by browser roles.
 DO $rls$ DECLARE t text;
 BEGIN
  FOREACH t IN ARRAY ARRAY['asi_ingress_events_676','asi_ingress_deadletters_676','asi_ingress_cursors_676','asi_telegram_bindings_676','asi_telegram_outbox_676','asi_telegram_update_ids_676']
@@ -70,8 +65,6 @@ BEGIN
 END $rls$;
 GRANT USAGE, SELECT ON SEQUENCE public.asi_ingress_events_676_id_seq, public.asi_ingress_deadletters_676_id_seq TO service_role;
 
--- Serialize all writes for one property's imported calendar; transaction-aware
--- lock prevents duplicate races, conflicting concurrent imports and cursor drift.
 CREATE OR REPLACE FUNCTION public.asi_ingest_event_676(
  p_account uuid,p_property uuid,p_source text,p_external text,p_recurrence text,
  p_start timestamptz,p_end timestamptz,p_seq integer,p_cancelled boolean,p_hash text

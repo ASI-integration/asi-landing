@@ -1,8 +1,3 @@
-/**
- * #676: no-send, read-only incoming booking adapters.
- * Stores normalized inbox candidates; NEVER confirms an OTA reservation or
- * publishes inventory/prices. A separate reviewed booking reconciliation owns that.
- */
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 export type IncomingReservation676 = {
@@ -65,7 +60,6 @@ function parseIcalInstant(value: string, timezone: string | null): string {
     if(parts(guess).join(',')===[y,mo,day,hour,minute,second].join(',')) matches.push(guess);
   }
   if(!matches.length) throw new Error('ical_dst_gap');
-  // RFC 5545 specifies the first occurrence for ambiguous fall-back times.
   return new Date(Math.min(...matches)).toISOString();
 }
 function prop(line:string): {name:string;value:string;tz:string|null} {
@@ -187,11 +181,6 @@ export async function importInbound676(
   return stats;
 }
 
-/**
- * Pull ONLY a server-approved HTTPS source. The transport is injected for
- * contract tests; this helper is not scheduled or enabled by this PR.
- * A provider outage creates a durable DLQ record and cannot advance cursor.
- */
 export async function pollIcalFeed676(input:{
  url:string;allowHostname:string;
  scope:{accountId:string;propertyId:string;sourceId:string;defaultTimezone?:string};
