@@ -27,9 +27,12 @@ if (
 test.use({ baseURL: BASE, trace: 'retain-on-failure' });
 test.describe.configure({ mode: 'serial' });
 
-test('new main build and no-login protected task API', async ({ request }) => {
+test('new main build, exact-SHA version and no-login protected task API', async ({ request }) => {
   expect((await request.get('/_next/static/' + BUILD + '/_buildManifest.js')).status()).toBe(200);
   expect((await request.get('/api/health')).status()).toBe(200);
+  const version = await request.get('/api/version');
+  expect(version.status()).toBe(200);
+  expect((await version.json()).sha).toBe('d1c933bd01ce4ec84ca68e0dc0c01fd2646abb8a');
   expect((await request.get('/api/dashboard/property-tasks?accountId=' + ACCOUNT + '&propertyId=' + PROPERTY)).status()).toBe(401);
 });
 
