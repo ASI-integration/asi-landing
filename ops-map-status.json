@@ -20,7 +20,7 @@
   "schema": "asi.ops-map.v1",
   "source": {
     "branch": "asi/ops-map-live",
-    "mainSha": "99425da7f875164fe1aa2f6f463a1a0fd11b517a",
+    "mainSha": "819305a943af5b5a9354541a23a89c799057793c",
     "repository": "ASI-integration/asi-landing"
   },
   "stages": [
@@ -46,5 +46,5 @@
     }
   ],
   "summary": "READY_FOR_DEMO: N01–N15, B01, T30 и финансы PASS. Дебет=кредит, no-send, очистка 0. Следующий этап — первые объекты (после ревью и merge PR).",
-  "updatedAt": "2026-11-19T14:52:22.109123+00:00"
+  "updatedAt": "2026-11-19T14:53:25.596930+00:00"
 }
