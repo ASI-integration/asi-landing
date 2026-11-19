@@ -1199,16 +1199,23 @@ export function requiredApproval({contract, changed, prNumber, prBody, headSha})
       contract.transition.legacyHeads[String(prNumber)] === headSha
       ? null : 'RELEASE-EXCEPTION';
   }
-  // Routine changes are exempt from repeated ASI-OWNER-APPROVE comments.
-  if (changed.every(ordinaryChangePath)) return null;
+  // Development-only sources do not acquire release authority.
   const f = fields(prBody || '');
   if (f.mode === 'development' && changed.every(developmentPath)) return null;
   const next = contract.stages.find(s => s.status !== 'ACCEPTED')?.id;
   const stage = contract.stages.find(s => s.id === f.stage);
-  return !stage || stage.id !== next ||
-    !['implementation', 'diagnostic', 'acceptance'].includes(f.mode) ||
-    changed.some(p => ![...stage.files, ...(stage.plannedFiles || [])].includes(p) && !routineStagePath(stage.id,p))
-    ? 'RELEASE-EXCEPTION' : null;
+  // A frozen stage must not silently skip exact-SHA owner verification just
+  // because every out-of-stage path appears "ordinary". checkPr() already
+  // demands ownerApproval for these paths: make its verified attestation
+  // reachable, without changing release scope or bypassing any status check.
+  if (!stage || stage.id !== next ||
+      !['implementation', 'diagnostic', 'acceptance'].includes(f.mode) ||
+      changed.some(p => ![...stage.files, ...(stage.plannedFiles || [])].includes(p) && !routineStagePath(stage.id,p))) {
+    return 'RELEASE-EXCEPTION';
+  }
+  // In-stage ordinary changes still need no redundant owner approval.
+  if (changed.every(ordinaryChangePath)) return null;
+  return null;
 }
 export async function verifyStageRuns(contract, token, reader) {
   const verified = new Set();
