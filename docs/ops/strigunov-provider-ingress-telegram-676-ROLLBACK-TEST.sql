@@ -1,0 +1,73 @@
+-- Synthetic, fixture-only #676 transaction test, appended after migration
+-- DDL in a *single* outer BEGIN; runner appends ROLLBACK. No provider calls.
+INSERT INTO public.accounts(id,name) VALUES ('00000000-0000-4000-8000-000000006761','E2E676 tenant');
+INSERT INTO public.users(id,email,password_hash) VALUES ('00000000-0000-4000-8000-000000006763','e2e676-operator@example.invalid','synthetic-no-login');
+INSERT INTO public.account_members(account_id,user_id,role) VALUES ('00000000-0000-4000-8000-000000006761','00000000-0000-4000-8000-000000006763','operator');
+INSERT INTO public.properties(id,account_id,name) VALUES ('00000000-0000-4000-8000-000000006762','00000000-0000-4000-8000-000000006761','E2E676 property');
+INSERT INTO public.ops_tasks(id,property_id,task_type,work_kind,title,assigned_to) VALUES
+ ('00000000-0000-4000-8000-000000006764','00000000-0000-4000-8000-000000006762','turnover','cleaning','E2E676 clean','00000000-0000-4000-8000-000000006763');
+INSERT INTO public.asi_telegram_bindings_676(account_id,property_id,user_id,telegram_user_id,chat_id,enabled)
+ VALUES ('00000000-0000-4000-8000-000000006761','00000000-0000-4000-8000-000000006762','00000000-0000-4000-8000-000000006763',444,7777,true);
+SET LOCAL ROLE service_role;
+DO $test$
+DECLARE status text;
+BEGIN
+ SELECT public.asi_ingest_event_676(
+  '00000000-0000-4000-8000-000000006761','00000000-0000-4000-8000-000000006762',
+  'fixture_feed','ICAL_A','', '2026-11-25T15:00:00Z','2026-11-27T11:00:00Z',1,false,repeat('a',64)
+ ) INTO status;
+ IF status<>'accepted' THEN RAISE EXCEPTION 'IMPORT_FAILED %',status;END IF;
+ SELECT public.asi_ingest_event_676(
+  '00000000-0000-4000-8000-000000006761','00000000-0000-4000-8000-000000006762',
+  'fixture_feed','ICAL_A','', '2026-11-25T15:00:00Z','2026-11-27T11:00:00Z',1,false,repeat('a',64)
+ ) INTO status;
+ IF status<>'replayed' THEN RAISE EXCEPTION 'REPLAY_FAILED %',status;END IF;
+ SELECT public.asi_ingest_event_676(
+  '00000000-0000-4000-8000-000000006761','00000000-0000-4000-8000-000000006762',
+  'fixture_feed','ICAL_B','', '2026-11-26T15:00:00Z','2026-11-28T11:00:00Z',1,false,repeat('b',64)
+ ) INTO status;
+ IF status<>'conflict_review' THEN RAISE EXCEPTION 'OVERLAP_MISSED %',status;END IF;
+ SELECT public.asi_ingest_event_676(
+  '00000000-0000-4000-8000-000000006761','00000000-0000-4000-8000-000000006762',
+  'fixture_feed','ICAL_A','', NULL,NULL,2,true,repeat('c',64)
+ ) INTO status;
+ IF status<>'cancelled' THEN RAISE EXCEPTION 'CANCELLED_FAILED %',status;END IF;
+ SELECT public.asi_ingest_event_676(
+  '00000000-0000-4000-8000-000000006761','00000000-0000-4000-8000-000000006762',
+  'fixture_feed','ICAL_A','', '2026-11-25T15:00:00Z','2026-11-27T11:00:00Z',1,false,repeat('a',64)
+ ) INTO status;
+ IF status<>'stale' THEN RAISE EXCEPTION 'STALE_FAILED %',status;END IF;
+ PERFORM public.asi_ingress_commit_cursor_676(
+  '00000000-0000-4000-8000-000000006761','00000000-0000-4000-8000-000000006762','fixture_feed','page:2');
+ IF (SELECT cursor_value FROM public.asi_ingress_cursors_676
+ WHERE account_id='00000000-0000-4000-8000-000000006761' AND source_id='fixture_feed')<>'page:2'
+ THEN RAISE EXCEPTION 'CURSOR_NOT_COMMITTED';END IF;
+ RAISE NOTICE 'PASS_INGRESS_REPLAY_OVERLAP_CANCEL_STALE_CURSOR';
+ SELECT public.asi_telegram_enqueue_676(
+  '00000000-0000-4000-8000-000000006761','00000000-0000-4000-8000-000000006762',
+  '00000000-0000-4000-8000-000000006764','00000000-0000-4000-8000-000000006763',
+  7777,repeat('d',64),'E2E676 clean'
+ ) INTO status;
+ IF status<>'created' THEN RAISE EXCEPTION 'TELEGRAM_ENQUEUE_FAILED %',status;END IF;
+ SELECT public.asi_telegram_enqueue_676(
+  '00000000-0000-4000-8000-000000006761','00000000-0000-4000-8000-000000006762',
+  '00000000-0000-4000-8000-000000006764','00000000-0000-4000-8000-000000006763',
+  7777,repeat('d',64),'E2E676 clean'
+ ) INTO status;
+ IF status<>'replayed' THEN RAISE EXCEPTION 'TELEGRAM_DUPLICATE_ENQUEUE %',status;END IF;
+ SELECT public.asi_telegram_transition_676('00000000-0000-4000-8000-000000006764',111,444,8888,repeat('d',64),'accept') INTO status;
+ IF status<>'forbidden' THEN RAISE EXCEPTION 'TELEGRAM_CROSS_CHAT_LEAK %',status;END IF;
+ SELECT public.asi_telegram_transition_676('00000000-0000-4000-8000-000000006764',112,444,7777,repeat('d',64),'accept') INTO status;
+ IF status<>'accepted' THEN RAISE EXCEPTION 'TELEGRAM_ACCEPT_FAILED %',status;END IF;
+ SELECT public.asi_telegram_transition_676('00000000-0000-4000-8000-000000006764',112,444,7777,repeat('d',64),'accept') INTO status;
+ IF status<>'replayed' THEN RAISE EXCEPTION 'TELEGRAM_REPLAY_FAILED %',status;END IF;
+ SELECT public.asi_telegram_transition_676('00000000-0000-4000-8000-000000006764',113,444,7777,repeat('d',64),'close') INTO status;
+ IF status<>'accepted' THEN RAISE EXCEPTION 'TELEGRAM_CLOSE_FAILED %',status;END IF;
+ IF (SELECT task_status FROM public.ops_tasks WHERE id='00000000-0000-4000-8000-000000006764')<>'resolved' THEN
+  RAISE EXCEPTION 'TELEGRAM_TASK_NOT_RESOLVED';END IF;
+ IF (SELECT send_status FROM public.asi_telegram_outbox_676 WHERE task_id='00000000-0000-4000-8000-000000006764')<>'queued_dry_run' THEN
+  RAISE EXCEPTION 'UNEXPECTED_EXTERNAL_SEND';END IF;
+ RAISE NOTICE 'PASS_TELEGRAM_NO_SEND_ASSIGNMENT_CALLBACK_REPLAY_CLOSE';
+END $test$;
+RESET ROLE;
+-- No COMMIT: outer transaction is rolled back by the runner.
