@@ -1,9 +1,9 @@
 {
   "currentStage": 4,
   "facts": {
-    "lastClosedAt": "2026-11-19T13:45:32Z",
+    "lastClosedAt": "2026-11-19T14:52:20Z",
     "lastClosedMerged": true,
-    "lastClosedPr": 681,
+    "lastClosedPr": 682,
     "pr658Merged": true,
     "pr664Merged": true,
     "pr665Merged": true,
@@ -46,5 +46,5 @@
     }
   ],
   "summary": "READY_FOR_DEMO: N01–N15, B01, T30 и финансы PASS. Дебет=кредит, no-send, очистка 0. Следующий этап — первые объекты (после ревью и merge PR).",
-  "updatedAt": "2026-11-19T13:46:36.764455+00:00"
+  "updatedAt": "2026-11-19T14:52:22.109123+00:00"
 }
