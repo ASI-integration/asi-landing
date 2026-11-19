@@ -26,7 +26,8 @@ export type ContractDraft677={
  evidenceHash:string;requiresHumanSignature:true;
 };
 export type BankLine677={
- statementId:string;providerId:string;transactionId:string;bookingId:string;
+ statementId:string;providerId:string;transactionId:string;accountId:string;bookingId:string;
+ flow:'guest_receipt'|'owner_payout';
  postedAt:string;currency:'RUB';amountMinor:string;status:'posted'|'pending'|'reversed';
  evidenceHash:string;
 };
@@ -144,7 +145,8 @@ export function reconcileThreeWay677(expected:BookingExpected677,lines:readonly 
 }{
  const seen=new Set<string>();let bank=BigInt('0');const queue:string[]=[];
  for(const line of lines){
-  if(line.bookingId!==expected.bookingId||line.currency!==expected.currency)throw Error('bank_tenant_or_currency_mismatch');
+  if(line.accountId!==expected.accountId||line.bookingId!==expected.bookingId||line.currency!==expected.currency)throw Error('bank_tenant_or_currency_mismatch');
+  if(line.flow!=='guest_receipt')throw Error('bank_receipt_direction_mismatch');
   if(!line.statementId||!line.providerId||!line.transactionId||!line.evidenceHash.match(/^[a-f0-9]{64}$/))throw Error('bank_evidence_required');
   const key=line.providerId+':'+line.statementId+':'+line.transactionId;
   if(seen.has(key))continue;seen.add(key);
@@ -154,7 +156,8 @@ export function reconcileThreeWay677(expected:BookingExpected677,lines:readonly 
  let ownerPaid=BigInt('0');
  const seenPayout=new Set<string>();
  for(const payout of ownerPayoutBankLines){
-  if(payout.bookingId!==expected.bookingId||payout.currency!==expected.currency)throw Error('owner_payout_scope_mismatch');
+  if(payout.accountId!==expected.accountId||payout.bookingId!==expected.bookingId||payout.currency!==expected.currency)throw Error('owner_payout_scope_mismatch');
+  if(payout.flow!=='owner_payout')throw Error('owner_payout_direction_mismatch');
   if(!payout.providerId||!payout.statementId||!payout.transactionId||
     !/^[a-f0-9]{64}$/.test(payout.evidenceHash))throw Error('owner_payout_bank_evidence_required');
   const key=payout.providerId+':'+payout.statementId+':'+payout.transactionId;

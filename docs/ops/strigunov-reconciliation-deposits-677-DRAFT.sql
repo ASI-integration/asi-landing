@@ -28,7 +28,7 @@ CREATE TABLE public.asi_contract_drafts_677 (
  state text NOT NULL DEFAULT 'draft' CHECK(state IN ('draft','sent_no_send','signed_verified','expired','blocked')),
  signed_evidence_hash text,
  created_at timestamptz NOT NULL DEFAULT now(),
- CHECK(state<>'signed_verified' OR signed_evidence_hash ~ '^[a-f0-9]{64}$')
+ CHECK(state<>'signed_verified' OR (signed_evidence_hash IS NOT NULL AND signed_evidence_hash ~ '^[a-f0-9]{64}$'))
 );
 CREATE TABLE public.asi_deposit_events_677 (
  id uuid PRIMARY KEY,
@@ -44,7 +44,7 @@ CREATE TABLE public.asi_deposit_events_677 (
  reversal_of uuid REFERENCES public.asi_deposit_events_677(id),
  created_at timestamptz NOT NULL DEFAULT now(),
  CHECK(event_state NOT IN ('received_bank_verified','retained_partially','retained_fully','refunded_bank_verified')
-   OR (journal_id IS NOT NULL AND length(bank_reference)>0 AND bank_evidence_hash ~ '^[a-f0-9]{64}$'))
+   OR (journal_id IS NOT NULL AND bank_reference IS NOT NULL AND length(bank_reference)>0 AND bank_evidence_hash IS NOT NULL AND bank_evidence_hash ~ '^[a-f0-9]{64}$'))
 );
 CREATE TABLE public.asi_bank_statement_lines_677 (
  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -135,6 +135,49 @@ BEGIN
  THEN RAISE EXCEPTION 'finance_tenant_booking_scope_denied' USING ERRCODE='42501';END IF;
  RETURN NEW;
 END $$;
+CREATE OR REPLACE FUNCTION public.asi_finance_reference_scope_677()
+RETURNS trigger LANGUAGE plpgsql SET search_path=public,pg_temp AS $$
+BEGIN
+ IF TG_TABLE_NAME='asi_contract_rules_677' THEN
+  IF NOT EXISTS(SELECT 1 FROM public.properties p WHERE p.id=NEW.property_id AND p.account_id=NEW.account_id)
+  THEN RAISE EXCEPTION 'contract_rule_tenant_scope_denied' USING ERRCODE='42501';END IF;
+ ELSIF TG_TABLE_NAME='asi_contract_drafts_677' THEN
+  IF NOT EXISTS(SELECT 1 FROM public.asi_contract_rules_677 r
+    WHERE r.id=NEW.contract_rule_id AND r.account_id=NEW.account_id AND r.property_id=NEW.property_id)
+  THEN RAISE EXCEPTION 'contract_rule_reference_scope_denied' USING ERRCODE='42501';END IF;
+ ELSIF TG_TABLE_NAME='asi_deposit_events_677' THEN
+  IF NEW.journal_id IS NOT NULL AND NOT EXISTS(
+    SELECT 1 FROM public.asi_journals_677 j
+    WHERE j.id=NEW.journal_id AND j.account_id=NEW.account_id AND j.property_id=NEW.property_id AND j.booking_id=NEW.booking_id)
+  THEN RAISE EXCEPTION 'deposit_journal_reference_scope_denied' USING ERRCODE='42501';END IF;
+  IF NEW.reversal_of IS NOT NULL AND NOT EXISTS(
+    SELECT 1 FROM public.asi_deposit_events_677 p
+    WHERE p.id=NEW.reversal_of AND p.account_id=NEW.account_id AND p.property_id=NEW.property_id AND p.booking_id=NEW.booking_id)
+  THEN RAISE EXCEPTION 'deposit_reversal_reference_scope_denied' USING ERRCODE='42501';END IF;
+ ELSIF TG_TABLE_NAME='asi_journals_677' THEN
+  IF NEW.reversal_of IS NOT NULL AND NOT EXISTS(
+    SELECT 1 FROM public.asi_journals_677 j
+    WHERE j.id=NEW.reversal_of AND j.account_id=NEW.account_id AND j.property_id=NEW.property_id AND j.booking_id=NEW.booking_id)
+  THEN RAISE EXCEPTION 'journal_reversal_reference_scope_denied' USING ERRCODE='42501';END IF;
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE OR REPLACE FUNCTION public.asi_finance_journal_lines_insert_guard_677()
+RETURNS trigger LANGUAGE plpgsql SET search_path=public,pg_temp AS $$
+DECLARE parent record;
+BEGIN
+ SELECT j.account_id,j.accounting_period,j.xmin::text AS created_tx INTO parent
+ FROM public.asi_journals_677 j WHERE j.id=NEW.journal_id;
+ IF NOT FOUND THEN RAISE EXCEPTION 'finance_journal_not_found' USING ERRCODE='42501';END IF;
+ -- Existing committed journals must never receive even a balanced extra pair.
+ IF parent.created_tx<>txid_current()::text THEN
+  RAISE EXCEPTION 'finance_journal_lines_after_commit_denied' USING ERRCODE='42501';
+ END IF;
+ IF EXISTS(SELECT 1 FROM public.asi_finance_period_closures_677 p
+   WHERE p.account_id=parent.account_id AND p.period_start=parent.accounting_period)
+ THEN RAISE EXCEPTION 'finance_closed_period_lines_denied' USING ERRCODE='42501';END IF;
+ RETURN NEW;
+END $$;
 CREATE OR REPLACE FUNCTION public.asi_finance_journal_open_677()
 RETURNS trigger LANGUAGE plpgsql SET search_path=public,pg_temp AS $$
 BEGIN
@@ -154,6 +197,16 @@ BEGIN
  IF count_lines<2 OR deb<>cred THEN RAISE EXCEPTION 'finance_journal_unbalanced' USING ERRCODE='23514';END IF;
  RETURN NULL;
 END $$;
+CREATE TRIGGER asi_contract_rules_scope_677 BEFORE INSERT ON public.asi_contract_rules_677
+ FOR EACH ROW EXECUTE FUNCTION public.asi_finance_reference_scope_677();
+CREATE TRIGGER asi_contract_drafts_ref_677 BEFORE INSERT ON public.asi_contract_drafts_677
+ FOR EACH ROW EXECUTE FUNCTION public.asi_finance_reference_scope_677();
+CREATE TRIGGER asi_deposit_ref_677 BEFORE INSERT ON public.asi_deposit_events_677
+ FOR EACH ROW EXECUTE FUNCTION public.asi_finance_reference_scope_677();
+CREATE TRIGGER asi_journal_ref_677 BEFORE INSERT ON public.asi_journals_677
+ FOR EACH ROW EXECUTE FUNCTION public.asi_finance_reference_scope_677();
+CREATE TRIGGER asi_journal_lines_insert_guard_677 BEFORE INSERT ON public.asi_journal_lines_677
+ FOR EACH ROW EXECUTE FUNCTION public.asi_finance_journal_lines_insert_guard_677();
 CREATE TRIGGER asi_contract_rule_overlap_677 BEFORE INSERT ON public.asi_contract_rules_677 FOR EACH ROW EXECUTE FUNCTION public.asi_contract_version_guard_677();
 CREATE TRIGGER asi_contract_rules_immutable_677 BEFORE UPDATE OR DELETE ON public.asi_contract_rules_677 FOR EACH ROW EXECUTE FUNCTION public.asi_finance_no_mutation_677();
 CREATE TRIGGER asi_contract_drafts_immutable_677 BEFORE UPDATE OR DELETE ON public.asi_contract_drafts_677 FOR EACH ROW EXECUTE FUNCTION public.asi_finance_no_mutation_677();

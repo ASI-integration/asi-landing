@@ -14,9 +14,9 @@ const rules=[rule('v1','2026-01-01','2026-11-19'),rule('v2','2026-11-19',null)];
 const input={rules,stayDay:'2026-11-19',accountId:'synthetic_account',bookingId:'synthetic_booking',gross:BigInt('10001'),deposit:BigInt('3000')};
 const expected=computeBookingSettlement677(input);
 const evidence=sha677('synthetic bank proof');
-const statement=(id:string,amountMinor:string,status:'posted'|'pending'|'reversed'='posted'):BankLine677=>({
+const statement=(id:string,amountMinor:string,status:'posted'|'pending'|'reversed'='posted',flow:'guest_receipt'|'owner_payout'='guest_receipt'):BankLine677=>({
  statementId:'test-bank-statement',providerId:'test-acquirer',transactionId:id,
- bookingId:input.bookingId,postedAt:'2026-11-20T12:00:00Z',currency:'RUB',
+ accountId:input.accountId,bookingId:input.bookingId,flow,postedAt:'2026-11-20T12:00:00Z',currency:'RUB',
  amountMinor,status,evidenceHash:evidence,
 });
 describe('#677 money and contract versions',()=>{
@@ -80,7 +80,7 @@ describe('#677 immutable journals and three-sided settlement',()=>{
   expect(()=>makeBalancedJournal677({...journal,entries:[...journal.entries,{account:'owner_payable',debit:BigInt('1'),credit:BigInt('0')}]})).toThrow('unbalanced');
  });
  it('complete bank proof + owner-paid amount yields matched',()=>{
-  expect(reconcileThreeWay677(expected,[statement('bank1','8501')],[statement('owner1','5951')],false))
+  expect(reconcileThreeWay677(expected,[statement('bank1','8501')],[statement('owner1','5951','posted','owner_payout')],false))
    .toMatchObject({status:'matched',differenceMinor:BigInt('0'),ownerOutstandingMinor:BigInt('0'),manualQueue:[]});
  });
  it('deduplicates replayed bank lines, flags partial/late/unmatched and unpaid owner',()=>{
@@ -99,6 +99,9 @@ describe('#677 immutable journals and three-sided settlement',()=>{
  it('bank evidence, currency/tenant separation and owner overpayment cannot be hidden',()=>{
   expect(()=>reconcileThreeWay677(expected,[{...statement('a','100'),currency:'USD' as 'RUB'}],[],false)).toThrow('bank_tenant_or_currency_mismatch');
   expect(()=>reconcileThreeWay677(expected,[{...statement('a','100'),evidenceHash:''}],[],false)).toThrow('bank_evidence_required');
-  expect(reconcileThreeWay677(expected,[statement('bank1','8501')],[statement('overpaid','5952')],false).manualQueue).toContain('OWNER_OVERPAID');
+  expect(reconcileThreeWay677(expected,[statement('bank1','8501')],[statement('overpaid','5952','posted','owner_payout')],false).manualQueue).toContain('OWNER_OVERPAID');
+  expect(()=>reconcileThreeWay677(expected,[{...statement('alien','8501'),accountId:'other-tenant'}],[],false)).toThrow('bank_tenant_or_currency_mismatch');
+  expect(()=>reconcileThreeWay677(expected,[statement('wrong-flow','8501','posted','owner_payout')],[],false)).toThrow('bank_receipt_direction_mismatch');
+  expect(()=>reconcileThreeWay677(expected,[statement('bank1','8501')],[statement('outbound-missing','5951')],false)).toThrow('owner_payout_direction_mismatch');
  });
 });

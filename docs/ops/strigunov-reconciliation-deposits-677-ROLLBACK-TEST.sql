@@ -10,6 +10,14 @@ INSERT INTO public.properties(id,account_id,name)
 VALUES ('00000000-0000-4000-8000-000000006773','00000000-0000-4000-8000-000000006771','E2E677 synthetic property');
 INSERT INTO public.booking_ops_records(id,account_id,property_id,booking_id,asi_reference)
 VALUES ('00000000-0000-4000-8000-000000006774','00000000-0000-4000-8000-000000006771','00000000-0000-4000-8000-000000006773','E2E677-BOOKING','E2E677-BOOKING');
+-- Cross-tenant fixtures are rollback-only, to verify DB-level reference guards.
+INSERT INTO public.accounts(id,name) VALUES
+ ('00000000-0000-4000-8000-000000006790','E2E677 foreign synthetic tenant');
+INSERT INTO public.properties(id,account_id,name) VALUES
+ ('00000000-0000-4000-8000-000000006791','00000000-0000-4000-8000-000000006790','E2E677 foreign property');
+INSERT INTO public.booking_ops_records(id,account_id,property_id,booking_id,asi_reference) VALUES
+ ('00000000-0000-4000-8000-000000006792','00000000-0000-4000-8000-000000006790',
+  '00000000-0000-4000-8000-000000006791','E2E677-FOREIGN','E2E677-FOREIGN');
 SET LOCAL ROLE service_role;
 INSERT INTO public.asi_contract_rules_677(account_id,property_id,version,valid_from,valid_until,commission_bps,tax_bps,owner_share_bps,currency,payment_model,evidence_hash)
 VALUES ('00000000-0000-4000-8000-000000006771','00000000-0000-4000-8000-000000006773','v1','2026-01-01','2026-11-19',1000,500,7000,'RUB','OTA_COLLECT',repeat('a',64)),
@@ -18,6 +26,21 @@ INSERT INTO public.asi_contract_drafts_677(id,account_id,property_id,booking_id,
 SELECT '00000000-0000-4000-8000-000000006775','00000000-0000-4000-8000-000000006771',
  '00000000-0000-4000-8000-000000006773','00000000-0000-4000-8000-000000006774',
  id,repeat('c',64),repeat('d',64),'draft' FROM public.asi_contract_rules_677 WHERE version='v2';
+-- Append-only balanced evidence journals for each synthetic deposit cash event.
+INSERT INTO public.asi_journals_677(id,account_id,property_id,booking_id,currency,accounting_period,source_key,source_hash)
+VALUES
+ ('00000000-0000-4000-8000-000000006782','00000000-0000-4000-8000-000000006771','00000000-0000-4000-8000-000000006773','00000000-0000-4000-8000-000000006774','RUB','2026-11-01','DEPOSIT_RECEIVED:ST77',repeat('e',64)),
+ ('00000000-0000-4000-8000-000000006783','00000000-0000-4000-8000-000000006771','00000000-0000-4000-8000-000000006773','00000000-0000-4000-8000-000000006774','RUB','2026-11-01','DEPOSIT_RETAINED:ST78',repeat('f',64)),
+ ('00000000-0000-4000-8000-000000006784','00000000-0000-4000-8000-000000006771','00000000-0000-4000-8000-000000006773','00000000-0000-4000-8000-000000006774','RUB','2026-11-01','DEPOSIT_REFUNDED:ST79',repeat('0',64));
+INSERT INTO public.asi_journal_lines_677(journal_id,ledger_account,debit_minor,credit_minor,evidence_hash)
+VALUES
+ ('00000000-0000-4000-8000-000000006782','bank_clearing',3000,0,repeat('e',64)),
+ ('00000000-0000-4000-8000-000000006782','deposit_liability',0,3000,repeat('e',64)),
+ ('00000000-0000-4000-8000-000000006783','deposit_liability',900,0,repeat('f',64)),
+ ('00000000-0000-4000-8000-000000006783','deposit_retained_revenue',0,900,repeat('f',64)),
+ ('00000000-0000-4000-8000-000000006784','deposit_liability',2100,0,repeat('0',64)),
+ ('00000000-0000-4000-8000-000000006784','bank_clearing',0,2100,repeat('0',64));
+
 INSERT INTO public.asi_deposit_events_677(id,account_id,property_id,booking_id,event_state,amount_minor)
 VALUES ('00000000-0000-4000-8000-000000006776','00000000-0000-4000-8000-000000006771',
  '00000000-0000-4000-8000-000000006773','00000000-0000-4000-8000-000000006774','requested_no_charge',3000);
@@ -45,27 +68,65 @@ VALUES ('00000000-0000-4000-8000-000000006780','00000000-0000-4000-8000-00000000
 INSERT INTO public.asi_journal_lines_677(journal_id,ledger_account,debit_minor,credit_minor,evidence_hash)
 VALUES ('00000000-0000-4000-8000-000000006780','bank_clearing',8501,0,repeat('1',64)),
  ('00000000-0000-4000-8000-000000006780','guest_receivable',0,8501,repeat('1',64));
--- Append-only balanced evidence journals for each synthetic deposit cash event.
-INSERT INTO public.asi_journals_677(id,account_id,property_id,booking_id,currency,accounting_period,source_key,source_hash)
-VALUES
- ('00000000-0000-4000-8000-000000006782','00000000-0000-4000-8000-000000006771','00000000-0000-4000-8000-000000006773','00000000-0000-4000-8000-000000006774','RUB','2026-11-01','DEPOSIT_RECEIVED:ST77',repeat('e',64)),
- ('00000000-0000-4000-8000-000000006783','00000000-0000-4000-8000-000000006771','00000000-0000-4000-8000-000000006773','00000000-0000-4000-8000-000000006774','RUB','2026-11-01','DEPOSIT_RETAINED:ST78',repeat('f',64)),
- ('00000000-0000-4000-8000-000000006784','00000000-0000-4000-8000-000000006771','00000000-0000-4000-8000-000000006773','00000000-0000-4000-8000-000000006774','RUB','2026-11-01','DEPOSIT_REFUNDED:ST79',repeat('0',64));
-INSERT INTO public.asi_journal_lines_677(journal_id,ledger_account,debit_minor,credit_minor,evidence_hash)
-VALUES
- ('00000000-0000-4000-8000-000000006782','bank_clearing',3000,0,repeat('e',64)),
- ('00000000-0000-4000-8000-000000006782','deposit_liability',0,3000,repeat('e',64)),
- ('00000000-0000-4000-8000-000000006783','deposit_liability',900,0,repeat('f',64)),
- ('00000000-0000-4000-8000-000000006783','deposit_retained_revenue',0,900,repeat('f',64)),
- ('00000000-0000-4000-8000-000000006784','deposit_liability',2100,0,repeat('0',64)),
- ('00000000-0000-4000-8000-000000006784','bank_clearing',0,2100,repeat('0',64));
 INSERT INTO public.asi_finance_manual_queue_677(account_id,property_id,booking_id,reason_code,expected_minor,observed_minor,evidence_hash)
 VALUES ('00000000-0000-4000-8000-000000006771','00000000-0000-4000-8000-000000006773',
  '00000000-0000-4000-8000-000000006774','OWNER_PAYOUT_OUTSTANDING',5951,0,repeat('2',64));
+-- Deliberate wrong-tenant and missing-evidence attempts must fail at SQL level.
+INSERT INTO public.asi_contract_rules_677(account_id,property_id,version,valid_from,commission_bps,tax_bps,owner_share_bps,currency,payment_model,evidence_hash)
+ VALUES ('00000000-0000-4000-8000-000000006790','00000000-0000-4000-8000-000000006791',
+ 'foreign','2026-01-01',100,100,8000,'RUB','OTA_COLLECT',repeat('8',64));
+DO $negative$
+DECLARE other_rule bigint; own_rule bigint;
+BEGIN
+ SELECT id INTO other_rule FROM public.asi_contract_rules_677 WHERE version='foreign';
+ SELECT id INTO own_rule FROM public.asi_contract_rules_677 WHERE version='v2';
+ BEGIN
+  INSERT INTO public.asi_deposit_events_677(id,account_id,property_id,booking_id,event_state,amount_minor,journal_id)
+  VALUES ('00000000-0000-4000-8000-000000006785','00000000-0000-4000-8000-000000006771',
+   '00000000-0000-4000-8000-000000006773','00000000-0000-4000-8000-000000006774',
+   'received_bank_verified',1,'00000000-0000-4000-8000-000000006782');
+  RAISE EXCEPTION 'NULL_BANK_EVIDENCE_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN RAISE NOTICE 'PASS_677_REJECTS_NULL_BANK_EVIDENCE';END;
+ BEGIN
+  INSERT INTO public.asi_contract_drafts_677(id,account_id,property_id,booking_id,contract_rule_id,terms_hash,evidence_hash,state)
+  VALUES ('00000000-0000-4000-8000-000000006786','00000000-0000-4000-8000-000000006771',
+   '00000000-0000-4000-8000-000000006773','00000000-0000-4000-8000-000000006774',
+   own_rule,repeat('c',64),repeat('d',64),'signed_verified');
+  RAISE EXCEPTION 'NULL_SIGNED_PROOF_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN RAISE NOTICE 'PASS_677_REJECTS_NULL_SIGNED_EVIDENCE';END;
+ BEGIN
+  INSERT INTO public.asi_contract_rules_677(account_id,property_id,version,valid_from,commission_bps,tax_bps,owner_share_bps,currency,payment_model,evidence_hash)
+  VALUES ('00000000-0000-4000-8000-000000006771','00000000-0000-4000-8000-000000006791',
+   'wrong_rule','2026-01-01',100,100,8000,'RUB','OTA_COLLECT',repeat('6',64));
+  RAISE EXCEPTION 'CROSS_TENANT_PROPERTY_RULE_ACCEPTED';
+ EXCEPTION WHEN SQLSTATE '42501' THEN RAISE NOTICE 'PASS_677_CROSS_TENANT_RULE_DENIED';END;
+ BEGIN
+  INSERT INTO public.asi_contract_drafts_677(id,account_id,property_id,booking_id,contract_rule_id,terms_hash,evidence_hash)
+  VALUES ('00000000-0000-4000-8000-000000006787','00000000-0000-4000-8000-000000006771',
+   '00000000-0000-4000-8000-000000006773','00000000-0000-4000-8000-000000006774',
+   other_rule,repeat('c',64),repeat('d',64));
+  RAISE EXCEPTION 'CROSS_TENANT_DRAFT_RULE_ACCEPTED';
+ EXCEPTION WHEN SQLSTATE '42501' THEN RAISE NOTICE 'PASS_677_CROSS_TENANT_DRAFT_DENIED';END;
+ BEGIN
+  INSERT INTO public.asi_deposit_events_677(id,account_id,property_id,booking_id,event_state,amount_minor,bank_reference,bank_evidence_hash,journal_id)
+  VALUES ('00000000-0000-4000-8000-000000006788','00000000-0000-4000-8000-000000006790',
+   '00000000-0000-4000-8000-000000006791','00000000-0000-4000-8000-000000006792',
+   'received_bank_verified',1,'FOREIGN-PROOF',repeat('e',64),'00000000-0000-4000-8000-000000006782');
+  RAISE EXCEPTION 'CROSS_TENANT_DEPOSIT_JOURNAL_ACCEPTED';
+ EXCEPTION WHEN SQLSTATE '42501' THEN RAISE NOTICE 'PASS_677_CROSS_TENANT_JOURNAL_DENIED';END;
+ BEGIN
+  INSERT INTO public.asi_deposit_events_677(id,account_id,property_id,booking_id,event_state,amount_minor,reversal_of)
+  VALUES ('00000000-0000-4000-8000-000000006789','00000000-0000-4000-8000-000000006790',
+   '00000000-0000-4000-8000-000000006791','00000000-0000-4000-8000-000000006792',
+   'requested_no_charge',1,'00000000-0000-4000-8000-000000006777');
+  RAISE EXCEPTION 'CROSS_TENANT_DEPOSIT_REVERSAL_ACCEPTED';
+ EXCEPTION WHEN SQLSTATE '42501' THEN RAISE NOTICE 'PASS_677_CROSS_TENANT_REVERSAL_DENIED';END;
+END $negative$;
 RESET ROLE;
+SET CONSTRAINTS ALL IMMEDIATE;
 DO $test$
 BEGIN
- IF (SELECT count(*) FROM public.asi_contract_rules_677)<>2 THEN RAISE EXCEPTION 'CONTRACT_VERSIONS';END IF;
+ IF (SELECT count(*) FROM public.asi_contract_rules_677 WHERE account_id='00000000-0000-4000-8000-000000006771')<>2 THEN RAISE EXCEPTION 'CONTRACT_VERSIONS';END IF;
  IF (SELECT count(*) FROM public.asi_contract_drafts_677 WHERE state='draft')<>1 THEN RAISE EXCEPTION 'CONTRACT_DRAFT_NO_SEND';END IF;
  IF (SELECT sum(amount_minor) FROM public.asi_deposit_events_677 WHERE event_state='received_bank_verified')<>3000 THEN RAISE EXCEPTION 'DEPOSIT_RECEIVED';END IF;
  IF (SELECT sum(amount_minor) FROM public.asi_deposit_events_677 WHERE event_state='refunded_bank_verified')<>2100 THEN RAISE EXCEPTION 'DEPOSIT_REFUNDED';END IF;
@@ -100,6 +161,13 @@ BEGIN
  RAISE EXCEPTION 'BANK_DELETED_WRONGLY';
  EXCEPTION WHEN SQLSTATE '42501' THEN
   RAISE NOTICE 'PASS_677_APPEND_ONLY_DELETE_DENIED';
+ END;
+ BEGIN
+  INSERT INTO public.asi_journal_lines_677(journal_id,ledger_account,debit_minor,credit_minor,evidence_hash)
+  VALUES ('00000000-0000-4000-8000-000000006780','bank_clearing',1,0,repeat('1',64));
+  RAISE EXCEPTION 'CLOSED_MONTH_LEDGER_LINES_ACCEPTED';
+ EXCEPTION WHEN SQLSTATE '42501' THEN
+  RAISE NOTICE 'PASS_677_CLOSED_PERIOD_LINE_INSERT_DENIED';
  END;
 END $test$;
 -- Caller appends ROLLBACK; any fixture rows must disappear.
