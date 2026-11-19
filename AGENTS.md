@@ -10,6 +10,13 @@ Task instructions override this file when they are more specific.
 - Project Skills: `.agents/skills/asi-task-execution`, `asi-staging-acceptance`, `asi-production-rollout`, `asi-website-editor`.
 - These documents supplement this file; the testing budget, protected areas, and deploy rules below remain authoritative.
 
+## MCP / Desktop Commander efficiency (persistent across tasks)
+- Minimize Remote MCP / Desktop Commander tool calls without compromising safety, verification, or auditability.
+- Batch related VPS diagnostics, file checks, migration preflights, builds, lint, and focused tests into a single reviewed bash script or `&&` chain when they share the same target and authorization. Use clear step labels, `set -euo pipefail` where appropriate, bounded timeouts, and one summarized exit-status report; do not silently skip failures.
+- Do not run repetitive status polling via separate MCP tool calls. Prefer waiting for a bounded command to finish within a single shell invocation and collecting its final output once; if the remote tool itself returns a long-running process handle, request output only when needed rather than polling in a loop.
+- Inspect only targeted file paths and relevant line ranges (`sed -n`, `grep -n`, `git diff --`, etc.); avoid whole-file dumps, recursive tree listings, and repeated broad searches unless explicitly necessary.
+- Prefer one concise preflight/result bundle per task to many one-command calls. Never batch actions with incompatible permissions or mix read-only checks with production writes; retain fail-closed gates, exact SHA checks, no-send rules, and protected-branch review.
+
 ## Testing Budget
 - Do NOT run broad test suites by default.
 - Do NOT run `npm test`.
