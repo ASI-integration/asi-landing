@@ -4,11 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslation } from '@/i18n/useTranslation';
-
-function safeRedirectPath(value: string | null): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/dashboard';
-  return value;
-}
+import { safeLoginRedirect } from '@/lib/auth-redirect';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -40,7 +36,7 @@ export default function LoginPage() {
         return;
       }
       const params = new URLSearchParams(window.location.search);
-      router.push(safeRedirectPath(params.get('redirect')));
+      router.push(safeLoginRedirect(params.get('redirect')));
     } catch {
       setError(t('signup.errorGeneric'));
     } finally {
