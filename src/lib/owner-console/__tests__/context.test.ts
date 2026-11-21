@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { OWNER_CONSOLE_EN_HREF } from '@/lib/owner-console/entry';
+import { OWNER_CONSOLE_EN_HREF, OWNER_CONSOLE_RU_HREF } from '@/lib/owner-console/entry';
 import { ownerConsoleSearch, resolveOwnerConsoleContext } from '@/lib/owner-console/context';
 
 describe('owner console context', () => {
@@ -63,7 +63,8 @@ describe('owner console context', () => {
     expect(header).toContain('OWNER_CONSOLE_EN_HREF');
     expect(header).toContain('Live Demo');
     expect(header).toContain('Partner with ASI');
-    expect(OWNER_CONSOLE_EN_HREF).toBe('/owner?lang=en&vertical=hospitality');
+    expect(OWNER_CONSOLE_EN_HREF).toBe('https://app.guestautopilot.com/owner?lang=en&vertical=hospitality');
+    expect(OWNER_CONSOLE_RU_HREF).toBe('https://app.asi-global.ru/owner?lang=ru&vertical=platform');
     const live = header.indexOf('Live Demo');
     const partner = header.indexOf('Partner with ASI');
     expect(live).toBeGreaterThan(-1);

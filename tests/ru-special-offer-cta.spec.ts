@@ -38,11 +38,11 @@ test.describe('RU homepage connection CTA click-through (read-only)', () => {
     for (let i = 0; i < 4; i++) {
       await page.goto('/ru', { waitUntil: 'domcontentloaded' });
       const cta = page.locator('[data-testid="start-connection"]').nth(i);
-      const ownerHref = '/owner?lang=ru&vertical=platform';
+      const ownerHref = 'https://app.asi-global.ru/owner?lang=ru&vertical=platform';
       const expected = i === 0 ? ownerHref : '/ru/connect';
       await expect(cta).toHaveAttribute('href', expected);
       await Promise.all([
-        page.waitForURL(i === 0 ? /\/owner\?/ : /\/ru\/connect(?:[?#]|$)/),
+        page.waitForURL(i === 0 ? /https:\/\/app\.asi-global\.ru\/owner\?/ : /\/ru\/connect(?:[?#]|$)/),
         cta.click(),
       ]);
     }
@@ -54,7 +54,7 @@ test.describe('RU homepage connection CTA click-through (read-only)', () => {
     await page.goto('/ru', { waitUntil: 'domcontentloaded' });
     const headerCta = page.locator('header').getByRole('link', { name: /Войти \/ подключить/i });
     await expect(headerCta.first()).toBeVisible();
-    await expect(headerCta.first()).toHaveAttribute('href', '/owner?lang=ru&vertical=platform');
+    await expect(headerCta.first()).toHaveAttribute('href', 'https://app.asi-global.ru/owner?lang=ru&vertical=platform');
 
     const footer = page.locator('footer');
     for (const label of ['Оферта', 'Политика конфиденциальности', 'Контакты']) {
