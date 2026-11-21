@@ -6,7 +6,14 @@
 
 export const PRODUCTION_APP_ORIGIN = 'https://www.asi-global.ru';
 
-const PRODUCTION_SHARED_COOKIE_HOSTS = new Set(['www.asi-global.ru', 'asi-global.ru']);
+const PRODUCTION_SHARED_COOKIE_HOSTS: Readonly<Record<string, string>> = {
+  'www.asi-global.ru': '.asi-global.ru',
+  'asi-global.ru': '.asi-global.ru',
+  'app.asi-global.ru': '.asi-global.ru',
+  'www.guestautopilot.com': '.guestautopilot.com',
+  'guestautopilot.com': '.guestautopilot.com',
+  'app.guestautopilot.com': '.guestautopilot.com',
+};
 
 export function getTrustedAppOrigin(
   env: Readonly<Record<string, string | undefined>> = process.env,
@@ -33,21 +40,29 @@ export function getGoogleOAuthRedirectUri(
 }
 
 /**
- * Parent-domain cookie only for production www/apex (historical behavior).
- * Staging and other hosts stay host-only so sessions do not leak across hosts.
+ * Auth cookies may be shared within ONE registrable domain, never between
+ * asi-global.ru and guestautopilot.com. An explicit request host takes
+ * precedence over the build-time NEXT_PUBLIC_APP_URL; this prevents the
+ * marketing-site config from setting an invalid .asi-global.ru cookie on
+ * app.guestautopilot.com. Unknown/preview hosts remain host-only.
  */
 export function resolveSessionCookieDomain(
   env: Readonly<Record<string, string | undefined>> = process.env,
   nodeEnv: string | undefined = process.env.NODE_ENV,
+  requestHost?: string | null,
 ): string | undefined {
   if (nodeEnv !== 'production') return undefined;
-  try {
-    const host = new URL(getTrustedAppOrigin(env)).hostname;
-    if (PRODUCTION_SHARED_COOKIE_HOSTS.has(host)) return '.asi-global.ru';
-  } catch {
-    return '.asi-global.ru';
+  if (requestHost !== undefined) {
+    const hostname = (requestHost ?? '').trim().toLowerCase().replace(/:\\d+$/, '');
+    return PRODUCTION_SHARED_COOKIE_HOSTS[hostname];
   }
-  return undefined;
+  try {
+    const host = new URL(getTrustedAppOrigin(env)).hostname.toLowerCase();
+    return PRODUCTION_SHARED_COOKIE_HOSTS[host];
+  } catch {
+    // Invalid or missing origin must never broaden cookie scope.
+    return undefined;
+  }
 }
 
 /** Path-only post-login redirect; blocks open redirects. */
