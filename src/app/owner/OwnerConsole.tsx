@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { catalogRows } from '@/lib/owner-console/catalog';
 import {
@@ -37,6 +37,22 @@ export function OwnerConsole({ hostname }: { hostname: string }) {
   const [run, setRun] = useState<DemoSnapshot | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/auth/session', { cache: 'no-store', signal: controller.signal })
+      .then((response) => response.ok ? response.json() : null)
+      .then((value) => { if (!controller.signal.aborted) setSignedIn(Boolean(value?.user?.id)); })
+      .catch(() => { if (!controller.signal.aborted) setSignedIn(null); });
+    return () => controller.abort();
+  }, []);
+  const accountDestination = context.market === 'ru' ? '/ru/legal-onboarding' : '/dashboard';
+  const signupDestination = context.market === 'ru'
+    ? '/ru/connect?redirect=%2Fru%2Flegal-onboarding'
+    : '/connect?redirect=%2Fdashboard';
+  const loginDestination = context.market === 'ru'
+    ? '/ru/connect?redirect=%2Fru%2Flegal-onboarding'
+    : '/login?redirect=%2Fdashboard';
   const [audits, setAudits] = useState<DemoAuditEntry[]>([]);
 
   function go(next: { lang?: OwnerLang; vertical?: OwnerVertical | null; section?: Section }) {
@@ -152,6 +168,32 @@ export function OwnerConsole({ hostname }: { hostname: string }) {
       </header>
 
       <main className="mx-auto max-w-6xl px-5 py-8 sm:px-8 sm:py-12">
+        {section === 'main' ? (
+          <section aria-label={copy.accountLabel} className="mb-8 flex flex-wrap items-center justify-between gap-4 border border-asi-border bg-asi-paper p-5">
+            <div>
+              <p className="font-serif text-2xl">{copy.accountLabel}</p>
+              <p className="mt-1 text-sm text-asi-navy/70">
+                {signedIn === true ? copy.accountSignedIn : copy.accountPrompt}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {signedIn === true ? (
+                <a href={accountDestination} className="bg-asi-navy px-5 py-3 text-sm font-semibold text-asi-ivory hover:bg-asi-navy-2">
+                  {copy.accountContinue}
+                </a>
+              ) : (
+                <>
+                  <a href={loginDestination} className="border border-asi-navy px-5 py-3 text-sm font-semibold text-asi-navy hover:bg-asi-ivory">
+                    {copy.accountLogin}
+                  </a>
+                  <a href={signupDestination} className="bg-asi-navy px-5 py-3 text-sm font-semibold text-asi-ivory hover:bg-asi-navy-2">
+                    {copy.accountCreate}
+                  </a>
+                </>
+              )}
+            </div>
+          </section>
+        ) : null}
         {section === 'main' ? (
           <div className="grid gap-8 lg:grid-cols-[1.15fr,0.85fr]">
             <section className="border border-asi-border bg-asi-paper p-6 sm:p-8">
@@ -301,6 +343,12 @@ function idleSteps(lang: OwnerLang): DemoSnapshot['steps'] {
 }
 
 const EN = {
+  accountLabel: 'Your ASI account',
+  accountPrompt: 'One account for real onboarding; the public demo is separate and never starts billing.',
+  accountSignedIn: 'Signed in. Continue to your workspace.',
+  accountContinue: 'Go to workspace',
+  accountLogin: 'Sign in',
+  accountCreate: 'Create account',
   demoTitle: 'Interactive Live Demo',
   commercialLabel: 'Commercial terms',
   console: 'Owner Console',
@@ -345,6 +393,12 @@ const EN = {
 };
 
 const RU = {
+  accountLabel: 'Ваш кабинет ASI',
+  accountPrompt: 'Одна учётная запись для подключения. Демо-песочница не запускает оплату.',
+  accountSignedIn: 'Вы вошли. Продолжите настройку в кабинете.',
+  accountContinue: 'Продолжить настройку',
+  accountLogin: 'Войти',
+  accountCreate: 'Создать кабинет',
   demoTitle: 'Интерактивная демонстрация',
   commercialLabel: 'Условия подключения',
   console: 'Личный кабинет',
