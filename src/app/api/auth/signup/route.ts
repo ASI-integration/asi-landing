@@ -95,7 +95,7 @@ export async function POST(req: Request) {
       {
         error: 'SIGNUP_FAILED',
         message: 'Не удалось зарегистрировать аккаунт. Попробуйте ещё раз позже или напишите в поддержку.',
-        ...(debug ? { details } : {}),
+        ...(debug && process.env.NODE_ENV !== 'production' ? { details } : {}),
       },
       { status: 500 }
     );

@@ -70,7 +70,7 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 
-import { POST as acceptLegal } from '@/app/api/ru/legal/acceptances/route';
+import { GET as readLegal, POST as acceptLegal } from '@/app/api/ru/legal/acceptances/route';
 import { POST as saveConnection } from '@/app/api/cabinet/connect/route';
 import {
   RU_LEGAL_DOCUMENTS,
@@ -149,6 +149,16 @@ describe('RU legal onboarding contract', () => {
       'Электронная почта: support@asi-global.ru',
     ]);
     expect(requisites.paragraphs.some((line) => /телефон|tel:|\+7/i.test(line))).toBe(false);
+  });
+
+  it('responds with a safe 503 while RU legal acceptance storage is disabled', async () => {
+    vi.stubEnv('RU_LEGAL_ACCEPTANCE_PERSISTENCE_ENABLED', 'false');
+    const read = await readLegal();
+    expect(read.status).toBe(503);
+    expect((await read.json()).code).toBe('RU_LEGAL_LOCALIZATION_REVIEW_REQUIRED');
+    const attemptedWrite = await acceptLegal(request({ documentType: 'offer' }));
+    expect(attemptedWrite.status).toBe(503);
+    expect(fixture.inserted).toHaveLength(0);
   });
 
   it('fails closed unless the localization review gate is explicitly enabled', () => {
@@ -292,14 +302,20 @@ describe('RU legal onboarding contract', () => {
   });
 
   it('keeps public RU copy free of provisional global promises and uses correct brand terminology', () => {
-    const publicFiles = [
-      'src/app/ru/page.tsx', 'src/app/ru/layout.tsx', 'src/app/ru/how-it-works/page.tsx',
+    // The public RU homepage already contains the expressly scoped
+    // Strigunov community offer. It must remain conditional, and no other
+    // public onboarding surface may imply a globally granted discount.
+    const home = readFileSync(resolve(process.cwd(), 'src/app/ru/page.tsx'), 'utf8');
+    expect(home).toContain('Условия для сообщества Ярослава Стригунова');
+    expect(home).toContain('Никакого автоматического перехода на оплату.');
+    const otherPublicFiles = [
+      'src/app/ru/layout.tsx', 'src/app/ru/how-it-works/page.tsx',
       'src/app/ru/early-access/page.tsx', 'src/app/ru/payment/page.tsx',
       'src/app/ru/otchet-po-dohodnosti-obektov/page.tsx',
       'src/components/dashboard/RentalConnectionFlow.tsx', 'src/components/early-access/EarlyAccessObjectForm.tsx',
       'src/config/ruHomeMetadata.ts',
     ].map((file) => readFileSync(resolve(process.cwd(), file), 'utf8')).join('\n');
-    expect(publicFiles).not.toMatch(/12 месяцев|1\s*000|Стригунова/i);
+    expect(otherPublicFiles).not.toMatch(/12 месяцев|1\s*000|Стригунова/i);
     const footer = readFileSync(resolve(process.cwd(), 'src/components/ru/RuComplianceFooter.tsx'), 'utf8');
     const compliance = readFileSync(resolve(process.cwd(), 'src/config/ruCompliance.ts'), 'utf8');
     expect(footer).toContain('ruCompliance.fullName');

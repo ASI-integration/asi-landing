@@ -65,6 +65,23 @@ describe('session cookie domain isolation', () => {
     expect(getSessionCookieOptions(env, 'production')).not.toHaveProperty('domain');
   });
 
+  it('uses the actual public host rather than the build-time APP_URL for session cookies', () => {
+    const env = { NEXT_PUBLIC_APP_URL: 'https://www.asi-global.ru' };
+    expect(resolveSessionCookieDomain(env, 'production', 'app.guestautopilot.com')).toBe('.guestautopilot.com');
+    expect(getSessionCookieOptions(env, 'production', 'app.guestautopilot.com').domain).toBe('.guestautopilot.com');
+    expect(getSessionCookieOptions(env, 'production', 'app.asi-global.ru').domain).toBe('.asi-global.ru');
+    expect(getSessionCookieOptions(env, 'production', 'www.guestautopilot.com').domain).toBe('.guestautopilot.com');
+  });
+
+  it('never broadens cookies for untrusted hosts or preview deployments', () => {
+    const env = { NEXT_PUBLIC_APP_URL: 'https://www.asi-global.ru' };
+    for (const hostname of ['evil.example', 'asi-global.ru.evil.example', 'localhost:3000', '', null]) {
+      expect(getSessionCookieOptions(env, 'production', hostname)).not.toHaveProperty('domain');
+    }
+    expect(getSessionCookieOptions(env, 'production', 'app.guestautopilot.com:443').domain).toBe('.guestautopilot.com');
+    expect(getSessionCookieOptions(env, 'development', 'app.guestautopilot.com')).not.toHaveProperty('domain');
+  });
+
   it('non-production never sets parent Domain', () => {
     const env = { NEXT_PUBLIC_APP_URL: 'https://www.asi-global.ru' };
     expect(resolveSessionCookieDomain(env, 'development')).toBeUndefined();

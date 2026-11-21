@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { supabase } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
-import { getGoogleOAuthRedirectUri, safeAuthRedirectPath } from '@/lib/auth/app-url';
+import { getGoogleOAuthRedirectUriForOrigin, safeAuthRedirectPath } from '@/lib/auth/app-url';
 import { ensureAccountForUser } from '@/lib/accounts';
 
 export const runtime = 'nodejs';
@@ -57,9 +57,9 @@ export async function GET(req: Request) {
   const code = url.searchParams.get('code') || '';
   const state = url.searchParams.get('state') || '';
   const debug = url.searchParams.get('debug') === '1';
-  const googleRedirectUri = getGoogleOAuthRedirectUri();
-
   const origin = getRequestOrigin(req);
+  const googleRedirectUri = getGoogleOAuthRedirectUriForOrigin(origin);
+  if (!googleRedirectUri) return NextResponse.json({ error: 'untrusted_oauth_origin' }, { status: 400 });
   let redirectPath = '/dashboard';
   const fail = (reason: string) => {
     const u = new URL('/connect', origin);
@@ -144,19 +144,20 @@ export async function GET(req: Request) {
       // Registration never starts the pilot clock.
     }
 
+    // Complete account provisioning before committing the login session.
+    // Existing users must not have their plan silently changed via OAuth state.
+    await ensureAccountForUser(
+      { userId: userId!, email, ...(existing ? {} : { selectedPlan: plan }), ...(await getIsRuHost() ? { ruCommercial: true } : { deferTrial: true }) }
+    );
+
     session.userId = userId!;
     session.email = email;
     await session.save();
 
     console.info('[GoogleOAuth][callback] session created', {
       userId,
-      email,
       hasCookieHeaderAfterSave: Boolean(req.headers.get('cookie')),
     });
-
-    await ensureAccountForUser(
-      { userId: userId!, email, selectedPlan: plan, ...(await getIsRuHost() ? { ruCommercial: true } : { deferTrial: true }) }
-    );
 
     console.info('[GoogleOAuth][callback] redirecting to dashboard', {
       userId,

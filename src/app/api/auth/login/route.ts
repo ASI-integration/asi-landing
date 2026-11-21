@@ -8,11 +8,11 @@ import { readRequestJson } from '@/lib/safeRequestJson';
 
 export async function POST(req: Request) {
   try {
-    const parsed = await readRequestJson<{ email?: string; password?: string; plan?: unknown }>(req);
+    const parsed = await readRequestJson<{ email?: string; password?: string }>(req);
     if (!parsed.ok) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
     }
-    const { email, password, plan } = parsed.data;
+    const { email, password } = parsed.data;
     if (!email?.trim() || !password) {
       return NextResponse.json({ error: 'Email and password required' }, { status: 400 });
     }
@@ -34,15 +34,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
 
+    // The account must be resolvable before issuing a valid session cookie.
+    // Login never starts a pilot or changes the selected subscription plan.
+    await ensureAccountForUser(
+      { userId: user.id, email: user.email, ...(await getIsRuHost() ? { ruCommercial: true } : { deferTrial: true }) }
+    );
+
     const session = await getSession();
     session.userId = user.id;
     session.email = user.email;
     await session.save();
-
-    // Login never starts or resets a pilot; readiness owns that transition.
-    await ensureAccountForUser(
-      { userId: user.id, email: user.email, selectedPlan: plan, ...(await getIsRuHost() ? { ruCommercial: true } : { deferTrial: true }) }
-    );
 
     return NextResponse.json({ ok: true, userId: user.id });
   } catch (err) {
