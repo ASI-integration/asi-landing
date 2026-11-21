@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chooseRefundPath, storyScenes } from '@/lib/owner-console/journey-story';
+import { storyEvidence } from '@/lib/owner-console/journey-evidence';
 
 describe('public hospitality guest journey', () => {
   it('is bilingual, ordered and covers the real guest lifecycle without inventing production data', () => {
@@ -49,6 +50,16 @@ describe('public hospitality guest journey', () => {
     expect(corporate.policy).toContain('HR');
     const voice = storyScenes('en').find((stage) => stage.id === 'communication')!;
     expect(voice.policy).toContain('not completed real calls');
+  });
+
+  it('shows inspectable synthetic calendars, incidents, staffing and delegated refund status', () => {
+    expect(storyEvidence('ru', 'reservation').items[0].value).toBe('DEMO-2148');
+    expect(storyEvidence('ru', 'incident').items[0].value).toContain('Дым');
+    expect(storyEvidence('ru', 'housekeeping').items[0].value).toContain('подтверждения');
+    expect(storyEvidence('en', 'resale').items[3].value).toBe('DEMO-2149');
+    expect(storyEvidence('ru', 'refund', 3).items[2].value).toBe('В рамках полномочий');
+    expect(storyEvidence('ru', 'refund', 4).items[2].value).toBe('Согласование владельца');
+    expect(storyEvidence('en', 'refund', 4).items[2].value).toBe('Owner approval required');
   });
 
   it('preserves the proven technical demo underneath the new human-readable story', () => {
