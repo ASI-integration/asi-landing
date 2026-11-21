@@ -53,7 +53,7 @@ export function resolveSessionCookieDomain(
 ): string | undefined {
   if (nodeEnv !== 'production') return undefined;
   if (requestHost !== undefined) {
-    const hostname = (requestHost ?? '').trim().toLowerCase().replace(/:\\d+$/, '');
+    const hostname = (requestHost ?? '').trim().toLowerCase().replace(/:[0-9]+$/, '');
     return PRODUCTION_SHARED_COOKIE_HOSTS[hostname];
   }
   try {
