@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getSession, isSessionSecretConfigured } from '@/lib/auth';
-import { getGoogleOAuthRedirectUri, safeAuthRedirectPath } from '@/lib/auth/app-url';
+import { getGoogleOAuthRedirectUriForOrigin, safeAuthRedirectPath } from '@/lib/auth/app-url';
 
 export const runtime = 'nodejs';
 
@@ -29,7 +29,9 @@ export async function GET(req: Request) {
   const debug = new URL(req.url).searchParams.get('debug') === '1';
   const plan = new URL(req.url).searchParams.get('plan');
   const redirectPath = safeAuthRedirectPath(new URL(req.url).searchParams.get('redirect'));
-  const googleRedirectUri = getGoogleOAuthRedirectUri();
+  const origin = getRequestOrigin(req);
+  const googleRedirectUri = getGoogleOAuthRedirectUriForOrigin(origin);
+  if (!googleRedirectUri) return NextResponse.json({ error: 'untrusted_oauth_origin' }, { status: 400 });
 
   if (!clientId || !clientSecret) {
     const url = new URL('/connect', getRequestOrigin(req));
@@ -47,7 +49,6 @@ export async function GET(req: Request) {
     return NextResponse.redirect(url);
   }
 
-  const origin = getRequestOrigin(req);
   const state = crypto.randomBytes(16).toString('hex');
 
   const session = await getSession();
