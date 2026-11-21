@@ -144,19 +144,20 @@ export async function GET(req: Request) {
       // Registration never starts the pilot clock.
     }
 
+    // Complete account provisioning before committing the login session.
+    // Existing users must not have their plan silently changed via OAuth state.
+    await ensureAccountForUser(
+      { userId: userId!, email, ...(existing ? {} : { selectedPlan: plan }), ...(await getIsRuHost() ? { ruCommercial: true } : { deferTrial: true }) }
+    );
+
     session.userId = userId!;
     session.email = email;
     await session.save();
 
     console.info('[GoogleOAuth][callback] session created', {
       userId,
-      email,
       hasCookieHeaderAfterSave: Boolean(req.headers.get('cookie')),
     });
-
-    await ensureAccountForUser(
-      { userId: userId!, email, selectedPlan: plan, ...(await getIsRuHost() ? { ruCommercial: true } : { deferTrial: true }) }
-    );
 
     console.info('[GoogleOAuth][callback] redirecting to dashboard', {
       userId,
