@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { catalogRows } from '@/lib/owner-console/catalog';
 import {
+  ownerCommercialOffer,
   ownerConsoleSearch,
   resolveOwnerConsoleContext,
   type OwnerLang,
@@ -32,6 +33,7 @@ export function OwnerConsole({ hostname }: { hostname: string }) {
     [hostname, langQuery, verticalQuery],
   );
   const copy = context.lang === 'ru' ? RU : EN;
+  const offer = useMemo(() => ownerCommercialOffer(context.market, context.lang), [context.market, context.lang]);
   const [run, setRun] = useState<DemoSnapshot | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
@@ -154,7 +156,7 @@ export function OwnerConsole({ hostname }: { hostname: string }) {
           <div className="grid gap-8 lg:grid-cols-[1.15fr,0.85fr]">
             <section className="border border-asi-border bg-asi-paper p-6 sm:p-8">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-text">{copy.demoKicker}</p>
-              <h1 className="mt-3 font-serif text-4xl leading-tight sm:text-5xl">Interactive Live Demo</h1>
+              <h1 className="mt-3 font-serif text-4xl leading-tight sm:text-5xl">{copy.demoTitle}</h1>
               <p className="mt-4 max-w-xl text-asi-navy/75 leading-relaxed">{copy.demoBody}</p>
               <button
                 type="button"
@@ -247,6 +249,30 @@ export function OwnerConsole({ hostname }: { hostname: string }) {
             <p className="mt-6 max-w-2xl text-sm text-asi-navy/65">{copy.planNote}</p>
           </section>
         ) : null}
+
+        {(section === 'main' || section === 'plan') ? (
+          <section aria-label={copy.commercialLabel} className="mt-10 border border-asi-border bg-asi-paper p-6 sm:p-8">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-text">{copy.commercialLabel}</p>
+            <h2 className="mt-3 font-serif text-3xl leading-tight sm:text-4xl">{offer.heading}</h2>
+            <p className="mt-4 max-w-3xl text-sm leading-relaxed text-asi-navy/75 sm:text-base">{offer.intro}</p>
+            <dl className="mt-6 grid gap-px border border-asi-border bg-asi-border sm:grid-cols-2 lg:grid-cols-4">
+              {offer.facts.map((fact) => (
+                <div key={fact.label} className="bg-asi-ivory p-5">
+                  <dt className="text-xs uppercase tracking-[0.14em] text-asi-gold-text">{fact.label}</dt>
+                  <dd className="mt-2 font-serif text-2xl">{fact.value}</dd>
+                  <p className="mt-2 text-sm leading-relaxed text-asi-navy/65">{fact.detail}</p>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-5 max-w-3xl text-sm leading-relaxed text-asi-navy/75">{offer.note}</p>
+            <a
+              href={offer.ctaHref}
+              className="mt-6 inline-flex items-center bg-asi-navy px-5 py-3 text-sm font-semibold text-asi-ivory hover:bg-asi-navy-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-asi-gold"
+            >
+              {offer.ctaLabel}
+            </a>
+          </section>
+        ) : null}
       </main>
     </div>
   );
@@ -275,6 +301,8 @@ function idleSteps(lang: OwnerLang): DemoSnapshot['steps'] {
 }
 
 const EN = {
+  demoTitle: 'Interactive Live Demo',
+  commercialLabel: 'Commercial terms',
   console: 'Owner Console',
   platform: 'Platform',
   verticalLabel: 'Vertical',
@@ -309,14 +337,16 @@ const EN = {
   stepState: { pending: 'Waiting', active: 'In progress', done: 'Done' },
   plan: [
     { label: 'Plan', value: '7-day Demo' },
-    { label: 'Price', value: '0' },
+    { label: 'Demo price', value: '0' },
     { label: 'Paid LLM', value: '0' },
-    { label: 'Days left', value: '7' },
+    { label: 'Demo window', value: '7 days' },
   ],
-  planNote: 'The demo window includes the sandbox scenario, three sample properties, and five staff slots. It does not spend paid model tokens.',
+  planNote: 'The demo window is a sandbox with example objects and five staff slots. It is not a property pilot or a paid subscription and never calls paid models.',
 };
 
 const RU = {
+  demoTitle: 'Интерактивная демонстрация',
+  commercialLabel: 'Условия подключения',
   console: 'Личный кабинет',
   platform: 'Платформа',
   verticalLabel: 'Вертикаль',
@@ -351,9 +381,9 @@ const RU = {
   stepState: { pending: 'Ожидание', active: 'В работе', done: 'Готово' },
   plan: [
     { label: 'Тариф', value: 'Демо 7 дней' },
-    { label: 'Цена', value: '0' },
+    { label: 'Цена демо', value: '0' },
     { label: 'Платные LLM', value: '0' },
-    { label: 'Осталось дней', value: '7' },
+    { label: 'Окно демо', value: '7 дней' },
   ],
-  planNote: 'Окно демо включает песочницу, три примерных объекта и пять слотов персонала. Платные токены модели не тратятся.',
+  planNote: 'Это демонстрационная песочница с примерными объектами и пятью слотами персонала, не пилот на реальном объекте и не платная подписка. Платные модели не вызываются.',
 };
