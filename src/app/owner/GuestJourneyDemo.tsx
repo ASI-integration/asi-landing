@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { chooseRefundPath, storyScenes, type StoryRole } from '@/lib/owner-console/journey-story';
+import { storyEvidence } from '@/lib/owner-console/journey-evidence';
 import type { OwnerLang } from '@/lib/owner-console/context';
 
 const ROLE_NAMES: Record<OwnerLang, Record<StoryRole, string>> = {
@@ -76,6 +77,7 @@ export default function GuestJourneyDemo({ lang }: { lang: OwnerLang }) {
   const [playing, setPlaying] = useState(false);
   const [refundNights, setRefundNights] = useState(3);
   const current = scenes[index];
+  const board = storyEvidence(lang, current.id, refundNights);
   const refundPath = chooseRefundPath(refundNights);
 
   useEffect(() => {
@@ -202,6 +204,35 @@ export default function GuestJourneyDemo({ lang }: { lang: OwnerLang }) {
                 ))}
               </ul>
             </div>
+          </div>
+          <div className="mt-6 border border-asi-border bg-asi-ivory p-4 sm:p-5" data-testid="journey-evidence-board">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-serif text-2xl">{board.title}</h3>
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-asi-gold-text">{copy.simulated}</span>
+            </div>
+            <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-2">
+              {board.items.map((item) => (
+                <div key={item.label} className="border border-asi-border bg-asi-paper p-3">
+                  <dt className="text-xs text-asi-navy/60">{item.label}</dt>
+                  <dd className="mt-2 text-sm font-semibold leading-relaxed text-asi-navy">{item.value}</dd>
+                </div>
+              ))}
+            </dl>
+            {current.id === 'reservation' || current.id === 'resale' ? (
+              <div className="mt-4" aria-label={lang === 'ru' ? 'Учебный календарь доступности' : 'Sample availability calendar'}>
+                <div className="grid grid-cols-7 gap-1">
+                  {Array.from({ length: 7 }, (_, day) => (
+                    <span key={day} className="flex aspect-square items-center justify-center border border-asi-gold-text/50 bg-asi-gold-soft/30 text-xs font-semibold text-asi-navy">
+                      {day + 1}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-asi-navy/60">{current.id === 'reservation'
+                  ? (lang === 'ru' ? 'Учебная бронь блокирует эти даты' : 'Sample booking blocks these nights')
+                  : (lang === 'ru' ? 'Даты открыты и повторно проданы только в учебном сценарии' : 'Nights released and resold in the sample story only')}</p>
+              </div>
+            ) : null}
+            <p className="mt-4 text-xs leading-relaxed text-asi-navy/60">{board.footnote}</p>
           </div>
           <div className="mt-6 border-t border-asi-border pt-5">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-asi-gold-text">{copy.policy}</p>
