@@ -8,6 +8,7 @@ import {
   BrandShiro,
 } from '@/components/brand';
 import { ConnectCta, RU_CONNECT_HREF } from '@/components/ru/ConnectCta';
+import { OWNER_CONSOLE_RU_HREF } from '@/lib/owner-console/entry';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
 
@@ -74,7 +75,7 @@ export default function HomeRu() {
         showContacts={false}
         showLogin={false}
         mainLinks={HOME_NAV_LINKS}
-        primaryCta={{ href: RU_CONNECT_HREF, label: 'Войти / подключить' }}
+        primaryCta={{ href: OWNER_CONSOLE_RU_HREF, label: 'Войти / подключить' }}
       />
 
       <main>
@@ -88,6 +89,9 @@ export default function HomeRu() {
               </BrandHeadline>
               <div className="hidden sm:block shrink-0 pt-2"><BrandShiro size={80} /></div>
             </div>
+            <div className="sm:hidden fixed z-40" style={{ bottom: 24, right: 24 }}>
+              <BrandShiro size={72} />
+            </div>
             <p className="mt-6 max-w-3xl text-base sm:text-xl text-asi-navy/75 leading-relaxed">
               Сейчас управление объектами — это постоянное переключение: брони в одном месте, чаты с гостями в другом, задачи горничным в третьем.
             </p>
@@ -98,7 +102,7 @@ export default function HomeRu() {
               Рутинную работу делает система. За человеком — только ключевые решения.
             </p>
             <div className="mt-7 sm:mt-9">
-              <ConnectCta href={RU_CONNECT_HREF} />
+              <ConnectCta href={OWNER_CONSOLE_RU_HREF} />
             </div>
             <p className="mt-3 max-w-4xl text-[16px] sm:text-[18px] font-medium tracking-[-0.01em] text-asi-navy/80 leading-relaxed">
               Сейчас — пилот: настраиваем доступные функции под ваш объект. Подключение и настройка — 0 ₽.

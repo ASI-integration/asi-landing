@@ -45,7 +45,7 @@ describe('RU-DESIGN-FINAL acceptance', () => {
 
     const header = readSrc('src/components/ru/RuPublicNavHeader.tsx');
     expect(header).toContain("label: 'Войти / подключить'");
-    expect(header).toContain('href: RU_CONNECT_HREF');
+    expect(header).toContain('href: OWNER_CONSOLE_RU_HREF');
     expect(header).not.toContain("href: '/ru/early-access'");
     expect(header).not.toMatch(/href=\{?['"]\/pilot['"]\}?/);
     expect(header).toContain('ruNavMainLinks');
@@ -59,8 +59,9 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     const report = readSrc('src/app/ru/location-report/page.tsx');
 
     expect(home).toContain('ConnectCta');
-    expect(home).toContain('href: RU_CONNECT_HREF');
-    expect(home).toContain('RuCommercialTimeline');
+    expect(home).toContain('href: OWNER_CONSOLE_RU_HREF');
+    expect(home).toContain('href={RU_CONNECT_HREF}');
+    expect(home).toContain('id="special-offer"');
     expect(home).not.toContain('COMMUNICATION_PILOT_PRICE_RUB');
     expect(home).toContain('id="pilot-form"');
     expect(home).not.toContain('Оценка локации — отдельный инструмент');
@@ -76,7 +77,7 @@ describe('RU-DESIGN-FINAL acceptance', () => {
 
     expect(locationLanding).toContain('Оценить объект по адресу');
     expect(locationLanding).toContain('/ru/location-analysis?mode=residential#location-check');
-    expect(locationLanding).toContain('не входит в пилот');
+    expect(locationLanding).toContain('не входит в бесплатный пилот');
     expect(analysis).toContain('LocationIntelligenceDemo');
     expect(analysis).toContain('LocationTelemetryProvider');
     expect(LOCATION_REPORT_PRODUCT_PATH).toBe('/ru/otchet-po-dohodnosti-obektov');
@@ -90,7 +91,7 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     expect(footer).toContain('BrandShiro');
     expect(footer).toContain('page shells can own the single');
     expect(footer).not.toMatch(/^\s*<footer[\s>]/m);
-    expect(footer).toContain('Политика данных');
+    expect(footer).toContain('Политика конфиденциальности');
     expect(footer).toContain('Оферта');
     expect(footer).not.toContain('>Конфиденциальность<');
     expect(footer).not.toContain('>Условия<');
@@ -131,10 +132,9 @@ describe('RU-DESIGN-FINAL acceptance', () => {
     expect(home.replace(/\s+/g, ' ')).toContain('Реальные ответы зависят от правил и данных конкретного объекта');
     expect(home).not.toContain('Полная операционная автоматизация');
     expect(home).toContain('ConnectCta');
-    expect(home).toContain('RuCommercialTimeline');
-    expect(home).toContain('Без оплаты на старте');
+    expect(home).toContain('OWNER_CONSOLE_RU_HREF');
+    expect(home).toContain('Подключение и настройка — 0 ₽.');
     expect(home).toContain('14 дней');
-    expect(home).toContain('Работы бесплатно');
     expect(home).not.toContain('Оплата пилота');
     expect(home).not.toContain('Платный MVP');
     expect(home).not.toContain('1 объект · 1 месяц');

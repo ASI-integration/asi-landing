@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { BrandLogoMark } from '@/components/brand';
 import { TgIcon } from '@/components/TgIcon';
-import { RU_CONNECT_HREF } from '@/components/ru/ConnectCta';
+import { OWNER_CONSOLE_RU_HREF } from '@/lib/owner-console/entry';
 import { productSupportEmail } from '@/config/contact';
 import { telegramSupportBotUrl } from '@/config/telegramBots';
 import { asiBrandButtonClasses, asiBrandLayout } from '@/config/brand/tokens';
@@ -18,14 +18,13 @@ export type RuPublicNavDensity = 'legal' | 'landing';
 type RuPublicNavLink = { readonly href: string; readonly label: string };
 
 const DEFAULT_PRIMARY_CTA = {
-  href: RU_CONNECT_HREF,
+  href: OWNER_CONSOLE_RU_HREF,
   label: 'Войти / подключить',
 } as const;
 
 /**
  * RU public header — guestautopilot visual language, RU customer journey labels.
- * Login remains utility on RU public surfaces and routes to the self-service
- * connection flow; primary acquisition CTA is the same /ru/connect path.
+ * Login remains utility on RU public surfaces and opens the unified Owner Console.
  * Homepage can override links to same-page anchors without changing other routes.
  */
 export function RuPublicNavHeader({
@@ -103,7 +102,7 @@ export function RuPublicNavHeader({
           ) : null}
           {showLogin ? (
             <Link
-              href={RU_CONNECT_HREF}
+              href={OWNER_CONSOLE_RU_HREF}
               className="text-sm font-sans text-asi-navy/65 hover:text-asi-navy transition-colors"
             >
               Войти
@@ -168,7 +167,7 @@ export function RuPublicNavHeader({
           ) : null}
           {showLogin ? (
             <Link
-              href={RU_CONNECT_HREF}
+              href={OWNER_CONSOLE_RU_HREF}
               onClick={() => setOpen(false)}
               className="mt-3 text-sm font-sans text-asi-navy/65"
             >

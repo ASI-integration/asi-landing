@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import { OWNER_CONSOLE_EN_HREF } from '@/lib/owner-console/entry';
 import { LogoMark } from './LogoMark';
 
 const NAV = [
@@ -36,7 +37,13 @@ export function SiteHeader() {
           ))}
         </nav>
 
-        <div className="hidden lg:block shrink-0">
+        <div className="hidden lg:flex items-center gap-5 shrink-0">
+          <Link
+            href={OWNER_CONSOLE_EN_HREF}
+            className="text-sm font-sans text-asi-navy/75 hover:text-asi-navy transition-colors"
+          >
+            Live Demo
+          </Link>
           <Link
             href="/#partner"
             className="inline-flex items-center px-5 py-2.5 border border-asi-navy text-asi-navy text-sm font-sans font-semibold tracking-wide rounded-sm hover:bg-asi-navy hover:text-asi-ivory transition-colors"
@@ -79,9 +86,16 @@ export function SiteHeader() {
             </Link>
           ))}
           <Link
+            href={OWNER_CONSOLE_EN_HREF}
+            onClick={() => setOpen(false)}
+            className="mt-4 text-base font-sans text-asi-navy"
+          >
+            Live Demo
+          </Link>
+          <Link
             href="/#partner"
             onClick={() => setOpen(false)}
-            className="mt-4 inline-flex items-center justify-center px-5 py-3 bg-asi-navy text-asi-ivory text-sm font-sans font-semibold tracking-wide rounded-sm"
+            className="mt-2 inline-flex items-center justify-center px-5 py-3 bg-asi-navy text-asi-ivory text-sm font-sans font-semibold tracking-wide rounded-sm"
           >
             Partner with ASI
           </Link>

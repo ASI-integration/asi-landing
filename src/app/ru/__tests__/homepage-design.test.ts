@@ -58,7 +58,8 @@ describe('RU owner connection journey — approved 2026-09-21', () => {
     const html = render();
     const wideActions = html.match(/<a[^>]*data-testid="start-connection"[^>]*>/g) ?? [];
     expect(wideActions).toHaveLength(4);
-    for (const action of wideActions) expect(action).toContain(`href="${RU_CONNECT_HREF}"`);
+    expect(wideActions[0]).toContain('href="/owner?lang=ru&amp;vertical=platform"');
+    for (const action of wideActions.slice(1)) expect(action).toContain(`href="${RU_CONNECT_HREF}"`);
 
     expect(html).toContain('id="special-offer"');
     expect(html).not.toContain('id="pricing"');

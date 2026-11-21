@@ -38,9 +38,11 @@ test.describe('RU homepage connection CTA click-through (read-only)', () => {
     for (let i = 0; i < 4; i++) {
       await page.goto('/ru', { waitUntil: 'domcontentloaded' });
       const cta = page.locator('[data-testid="start-connection"]').nth(i);
-      await expect(cta).toHaveAttribute('href', '/ru/connect');
+      const ownerHref = '/owner?lang=ru&vertical=platform';
+      const expected = i === 0 ? ownerHref : '/ru/connect';
+      await expect(cta).toHaveAttribute('href', expected);
       await Promise.all([
-        page.waitForURL(/\/ru\/connect(?:[?#]|$)/),
+        page.waitForURL(i === 0 ? /\/owner\?/ : /\/ru\/connect(?:[?#]|$)/),
         cta.click(),
       ]);
     }
@@ -52,7 +54,7 @@ test.describe('RU homepage connection CTA click-through (read-only)', () => {
     await page.goto('/ru', { waitUntil: 'domcontentloaded' });
     const headerCta = page.locator('header').getByRole('link', { name: /Войти \/ подключить/i });
     await expect(headerCta.first()).toBeVisible();
-    await expect(headerCta.first()).toHaveAttribute('href', '/ru/connect');
+    await expect(headerCta.first()).toHaveAttribute('href', '/owner?lang=ru&vertical=platform');
 
     const footer = page.locator('footer');
     for (const label of ['Оферта', 'Политика конфиденциальности', 'Контакты']) {

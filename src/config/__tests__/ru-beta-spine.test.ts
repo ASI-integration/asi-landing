@@ -23,15 +23,14 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
     expect(cta).toContain("RU_CONNECT_HREF = '/ru/connect'");
     expect(cta).toContain("RU_SPECIAL_OFFER_HREF = '#special-offer'");
     expect(home).toContain('RU_CONNECT_HREF');
-    expect(home).toContain('RU_SPECIAL_OFFER_HREF');
+    expect(home).toContain('OWNER_CONSOLE_RU_HREF');
     expect(home.match(/<ConnectCta\b/g) ?? []).toHaveLength(4);
     expect(home).toContain('id="how-it-works"');
     expect(home).toContain('id="special-offer"');
     expect(home).not.toContain('id="pricing"');
     expect(home).toContain('id="pilot-form"');
-    expect(home).toContain('RuCommercialTimeline');
-    expect(home).toContain('Без оплаты на старте');
-    expect(home).not.toMatch(/COMMUNICATION_PILOT_PRICE_RUB|12 месяцев|Стригунова/);
+    expect(home).toContain('Подключение и настройка — 0 ₽.');
+    expect(home).not.toContain('COMMUNICATION_PILOT_PRICE_RUB');
     expect(home).not.toContain('RU_LOCATION_CHECK_HREF');
     expect(home).not.toContain('Оценка локации — отдельный инструмент');
   });
@@ -44,13 +43,13 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
     );
     const mobile = header.slice(header.indexOf('{open ? ('));
 
-    expect(header).toContain("href: RU_CONNECT_HREF");
+    expect(header).toContain('href: OWNER_CONSOLE_RU_HREF');
     expect(header).toContain("label: 'Войти / подключить'");
     expect(header).not.toContain("href: '/ru/early-access'");
-    expect(desktop).toContain('href={RU_CONNECT_HREF}');
+    expect(desktop).toContain('href={OWNER_CONSOLE_RU_HREF}');
     expect(desktop).toContain('Войти');
     expect(desktop).not.toContain('href="/login"');
-    expect(mobile).toContain('href={RU_CONNECT_HREF}');
+    expect(mobile).toContain('href={OWNER_CONSOLE_RU_HREF}');
     expect(mobile).toContain('Войти');
     expect(mobile).not.toContain('href="/login"');
 
@@ -59,10 +58,10 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
     expect(how).not.toContain("PILOT_HREF = '/ru/early-access'");
 
     const home = readSrc('src/app/ru/page.tsx');
-    expect(home.match(/href=\{RU_SPECIAL_OFFER_HREF\}/g) ?? []).toHaveLength(3);
-    expect(home).toContain("href: '/ru#special-offer'");
-    expect(home).toContain('testId="continue-connection"');
-    expect(home).toContain("primaryCta={{ href: RU_CONNECT_HREF, label: 'Войти / подключить' }}");
+    expect(home.match(/href=\{RU_CONNECT_HREF\}/g) ?? []).toHaveLength(3);
+    expect(home).toContain('href={OWNER_CONSOLE_RU_HREF}');
+    expect(home).toContain('id="special-offer"');
+    expect(home).toContain("primaryCta={{ href: OWNER_CONSOLE_RU_HREF, label: 'Войти / подключить' }}");
 
     expect(ruNavMainLinks).toContainEqual({ href: '/ru/early-access', label: 'Пилот' });
     expect(ruNavMainLinks.map((link) => link.href)).toEqual([
@@ -101,10 +100,10 @@ describe('RU-02/RU-03 closed-beta spine + pilot boundary', () => {
     expect(header).not.toMatch(/href=["']\/pilot["']/);
     expect(header).toMatch(/Login remains utility/i);
     expect(header).toContain("label: 'Войти / подключить'");
-    expect(header).toContain('href: RU_CONNECT_HREF');
+    expect(header).toContain('href: OWNER_CONSOLE_RU_HREF');
     expect(header).not.toContain("href: '/ru/early-access'");
     expect(header).not.toContain('href="/login"');
-    expect(header.match(/href=\{RU_CONNECT_HREF\}/g) ?? []).toHaveLength(2);
+    expect(header.match(/href=\{OWNER_CONSOLE_RU_HREF\}/g) ?? []).toHaveLength(2);
 
     const bottom = readSrc('src/components/ru/RuBottomQuickLinks.tsx');
     expect(bottom).not.toMatch(/['"]\/pilot['"]/);

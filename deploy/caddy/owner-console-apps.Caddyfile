@@ -1,0 +1,11 @@
+# Same Node process for both app hosts. Caddy obtains Let's Encrypt
+# certificates and forwards the original Host so the console can tell
+# guestautopilot.com from asi-global.ru.
+
+app.guestautopilot.com, app.asi-global.ru {
+	reverse_proxy 127.0.0.1:3000 {
+		header_up Host {host}
+		header_up X-Forwarded-Host {host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

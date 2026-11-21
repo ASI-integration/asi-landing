@@ -7,6 +7,7 @@ export function FooterGate({ isRuHost }: { isRuHost: boolean }) {
   const pathname = usePathname() || '';
 
   // RU public pages own their footer (homepage serves at `/` on the RU host).
+  if (pathname === '/owner' || pathname.startsWith('/owner/')) return null;
   if (pathname === '/ru' || pathname.startsWith('/ru/')) return null;
   if (isRuHost && (pathname === '/' || pathname === '')) return null;
 

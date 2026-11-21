@@ -11,6 +11,7 @@ import {
   BrandShiro,
 } from '@/components/brand';
 import { RU_CONNECT_HREF } from '@/components/ru/ConnectCta';
+import { OWNER_CONSOLE_RU_HREF } from '@/lib/owner-console/entry';
 import { RuBottomQuickLinks } from '@/components/ru/RuBottomQuickLinks';
 import { RuComplianceFooter } from '@/components/ru/RuComplianceFooter';
 import { RuPublicNavHeader } from '@/components/ru/RuPublicNavHeader';
@@ -69,7 +70,7 @@ export default function RuCapabilitiesPage() {
         brandLabel="ASI Global"
         showContacts={false}
         mainLinks={PAGE_NAV_LINKS}
-        primaryCta={{ href: RU_CONNECT_HREF, label: 'Войти / подключить' }}
+        primaryCta={{ href: OWNER_CONSOLE_RU_HREF, label: 'Войти / подключить' }}
       />
 
       <main>
