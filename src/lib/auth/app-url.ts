@@ -39,6 +39,36 @@ export function getGoogleOAuthRedirectUri(
   return `${getTrustedAppOrigin(env)}/api/auth/google/callback`;
 }
 
+/** OAuth callback must return to the same trusted hostname where state was set.
+ * Browsers do not share cookies between the unrelated ASI and GuestAutopilot TLDs.
+ * For staging, an explicitly configured trusted app origin is accepted as well.
+ */
+const OAUTH_PUBLIC_ORIGINS = new Set([
+  'https://app.asi-global.ru',
+  'https://www.asi-global.ru',
+  'https://asi-global.ru',
+  'https://app.guestautopilot.com',
+  'https://www.guestautopilot.com',
+  'https://guestautopilot.com',
+]);
+
+export function getGoogleOAuthRedirectUriForOrigin(
+  requestOrigin: string,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string | null {
+  try {
+    const requested = new URL(requestOrigin);
+    if (requested.protocol !== 'https:') return null;
+    const origin = requested.origin;
+    if (OAUTH_PUBLIC_ORIGINS.has(origin) || origin === getTrustedAppOrigin(env)) {
+      return origin + '/api/auth/google/callback';
+    }
+  } catch {
+    // Reject malformed and untrusted origins.
+  }
+  return null;
+}
+
 /**
  * Auth cookies may be shared within ONE registrable domain, never between
  * asi-global.ru and guestautopilot.com. An explicit request host takes
