@@ -76,14 +76,14 @@ export async function POST(req: Request) {
       // Registration never starts the pilot clock.
     }
 
+    await ensureAccountForUser(
+      { userId: userId!, email, ...(existing ? {} : { selectedPlan: plan }), ...(await getIsRuHost() ? { ruCommercial: true } : { deferTrial: true }) }
+    );
+
     const session = await getSession();
     session.userId = userId!;
     session.email = email;
     await session.save();
-
-    await ensureAccountForUser(
-      { userId: userId!, email, selectedPlan: plan, ...(await getIsRuHost() ? { ruCommercial: true } : { deferTrial: true }) }
-    );
 
     return NextResponse.json({ ok: true, userId });
   } catch (err) {
