@@ -302,14 +302,20 @@ describe('RU legal onboarding contract', () => {
   });
 
   it('keeps public RU copy free of provisional global promises and uses correct brand terminology', () => {
-    const publicFiles = [
-      'src/app/ru/page.tsx', 'src/app/ru/layout.tsx', 'src/app/ru/how-it-works/page.tsx',
+    // The public RU homepage already contains the expressly scoped
+    // Strigunov community offer. It must remain conditional, and no other
+    // public onboarding surface may imply a globally granted discount.
+    const home = readFileSync(resolve(process.cwd(), 'src/app/ru/page.tsx'), 'utf8');
+    expect(home).toContain('Условия для сообщества Ярослава Стригунова');
+    expect(home).toContain('Никакого автоматического перехода на оплату.');
+    const otherPublicFiles = [
+      'src/app/ru/layout.tsx', 'src/app/ru/how-it-works/page.tsx',
       'src/app/ru/early-access/page.tsx', 'src/app/ru/payment/page.tsx',
       'src/app/ru/otchet-po-dohodnosti-obektov/page.tsx',
       'src/components/dashboard/RentalConnectionFlow.tsx', 'src/components/early-access/EarlyAccessObjectForm.tsx',
       'src/config/ruHomeMetadata.ts',
     ].map((file) => readFileSync(resolve(process.cwd(), file), 'utf8')).join('\n');
-    expect(publicFiles).not.toMatch(/12 месяцев|1\s*000|Стригунова/i);
+    expect(otherPublicFiles).not.toMatch(/12 месяцев|1\s*000|Стригунова/i);
     const footer = readFileSync(resolve(process.cwd(), 'src/components/ru/RuComplianceFooter.tsx'), 'utf8');
     const compliance = readFileSync(resolve(process.cwd(), 'src/config/ruCompliance.ts'), 'utf8');
     expect(footer).toContain('ruCompliance.fullName');
