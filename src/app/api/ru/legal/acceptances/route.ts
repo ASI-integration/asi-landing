@@ -5,6 +5,7 @@ import {
   RU_LEGAL_LOCALIZATION_GATE_CODE,
   acceptCurrentRuLegalDocument,
   getRuLegalOnboardingStateForUser,
+  isRuLegalAcceptancePersistenceEnabled,
   isRuLegalDocumentType,
 } from '@/lib/ru-legal';
 
@@ -14,11 +15,18 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   const auth = await requireCabinetSession();
   if ('error' in auth) return auth.error;
-  const state = await getRuLegalOnboardingStateForUser(auth.session.userId);
-  if (!state) {
-    return NextResponse.json({ ok: false, code: 'RU_ACCOUNT_MEMBERSHIP_REQUIRED' }, { status: 403 });
+  if (!isRuLegalAcceptancePersistenceEnabled()) {
+    return NextResponse.json({ ok: false, code: RU_LEGAL_LOCALIZATION_GATE_CODE }, { status: 503 });
   }
-  return NextResponse.json({ ok: true, state });
+  try {
+    const state = await getRuLegalOnboardingStateForUser(auth.session.userId);
+    if (!state) {
+      return NextResponse.json({ ok: false, code: 'RU_ACCOUNT_MEMBERSHIP_REQUIRED' }, { status: 403 });
+    }
+    return NextResponse.json({ ok: true, state });
+  } catch {
+    return NextResponse.json({ ok: false, code: 'RU_LEGAL_EVIDENCE_UNAVAILABLE' }, { status: 503 });
+  }
 }
 
 export async function POST(req: Request) {
