@@ -25,13 +25,16 @@ const SELECTED_PLAN_STORAGE_KEY = 'asi.selectedPlan';
 
 export default function OnboardingPageContent({ rental = false }: { rental?: boolean }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<'signup' | 'login'>('signup');
+  // Deep links from the RU public site can open the email login tab directly.
+  const [mode, setMode] = useState<'signup' | 'login'>(
+    searchParams.get('mode') === 'login' ? 'login' : 'signup',
+  );
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [googleStatus, setGoogleStatus] = useState<string>('');
-  const searchParams = useSearchParams();
   const isMountedRef = useRef(true);
 
   // OAuth redirect flow depends on SERVER env (client id + secret), not on build-time NEXT_PUBLIC_*.

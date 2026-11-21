@@ -17,6 +17,8 @@ export type RuPublicNavDensity = 'legal' | 'landing';
 
 type RuPublicNavLink = { readonly href: string; readonly label: string };
 
+const RU_EMAIL_LOGIN_HREF = '/ru/connect?mode=login&redirect=%2Fru%2Flegal-onboarding#connect-email';
+
 const DEFAULT_PRIMARY_CTA = {
   href: OWNER_CONSOLE_RU_HREF,
   label: 'Войти / подключить',
@@ -24,7 +26,7 @@ const DEFAULT_PRIMARY_CTA = {
 
 /**
  * RU public header — guestautopilot visual language, RU customer journey labels.
- * Login remains utility on RU public surfaces and opens the unified Owner Console.
+ * Login opens the existing email form directly; the primary CTA still opens the unified Owner Console.
  * Homepage can override links to same-page anchors without changing other routes.
  */
 export function RuPublicNavHeader({
@@ -102,10 +104,10 @@ export function RuPublicNavHeader({
           ) : null}
           {showLogin ? (
             <Link
-              href={OWNER_CONSOLE_RU_HREF}
+              href={RU_EMAIL_LOGIN_HREF}
               className="text-sm font-sans text-asi-navy/65 hover:text-asi-navy transition-colors"
             >
-              Войти
+              Войти по email
             </Link>
           ) : null}
           <Link href={primaryCta.href} className={asiBrandButtonClasses.headerOutline}>
@@ -167,11 +169,11 @@ export function RuPublicNavHeader({
           ) : null}
           {showLogin ? (
             <Link
-              href={OWNER_CONSOLE_RU_HREF}
+              href={RU_EMAIL_LOGIN_HREF}
               onClick={() => setOpen(false)}
               className="mt-3 text-sm font-sans text-asi-navy/65"
             >
-              Войти
+              Войти по email
             </Link>
           ) : null}
           <Link

@@ -11,6 +11,7 @@ import {
   type OwnerVertical,
 } from '@/lib/owner-console/context';
 import type { DemoAuditEntry, DemoSnapshot } from '@/lib/owner-console/demo-run';
+import GuestJourneyDemo from './GuestJourneyDemo';
 
 const SECTIONS = ['main', 'properties', 'operations', 'audit', 'plan'] as const;
 type Section = (typeof SECTIONS)[number];
@@ -51,7 +52,7 @@ export function OwnerConsole({ hostname }: { hostname: string }) {
     ? '/ru/connect?redirect=%2Fru%2Flegal-onboarding'
     : '/connect?redirect=%2Fdashboard';
   const loginDestination = context.market === 'ru'
-    ? '/ru/connect?redirect=%2Fru%2Flegal-onboarding'
+    ? '/ru/connect?mode=login&redirect=%2Fru%2Flegal-onboarding#connect-email'
     : '/login?redirect=%2Fdashboard';
   const [audits, setAudits] = useState<DemoAuditEntry[]>([]);
 
@@ -194,8 +195,14 @@ export function OwnerConsole({ hostname }: { hostname: string }) {
             </div>
           </section>
         ) : null}
+        {section === 'main' ? <GuestJourneyDemo lang={context.lang} /> : null}
         {section === 'main' ? (
-          <div className="grid gap-8 lg:grid-cols-[1.15fr,0.85fr]">
+          <details className="mt-8 border border-asi-border">
+            <summary className="cursor-pointer bg-asi-ivory px-6 py-5 text-sm font-semibold text-asi-navy hover:bg-asi-paper">
+              {copy.technicalDemoLabel}
+            </summary>
+            <div className="p-4 sm:p-6">
+              <div className="grid gap-8 lg:grid-cols-[1.15fr,0.85fr]">
             <section className="border border-asi-border bg-asi-paper p-6 sm:p-8">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-asi-gold-text">{copy.demoKicker}</p>
               <h1 className="mt-3 font-serif text-4xl leading-tight sm:text-5xl">{copy.demoTitle}</h1>
@@ -227,7 +234,9 @@ export function OwnerConsole({ hostname }: { hostname: string }) {
                 ))}
               </ol>
             </section>
-          </div>
+              </div>
+            </div>
+          </details>
         ) : null}
 
         {section === 'properties' || section === 'operations' ? (
@@ -343,6 +352,7 @@ function idleSteps(lang: OwnerLang): DemoSnapshot['steps'] {
 }
 
 const EN = {
+  technicalDemoLabel: 'Technical view: inspect the original four-step event log',
   accountLabel: 'Your ASI account',
   accountPrompt: 'One account for real onboarding; the public demo is separate and never starts billing.',
   accountSignedIn: 'Signed in. Continue to your workspace.',
@@ -393,11 +403,12 @@ const EN = {
 };
 
 const RU = {
+  technicalDemoLabel: 'Технический режим: исходный журнал четырёх событий',
   accountLabel: 'Ваш кабинет ASI',
   accountPrompt: 'Одна учётная запись для подключения. Демо-песочница не запускает оплату.',
   accountSignedIn: 'Вы вошли. Продолжите настройку в кабинете.',
   accountContinue: 'Продолжить настройку',
-  accountLogin: 'Войти',
+  accountLogin: 'Войти по email',
   accountCreate: 'Создать кабинет',
   demoTitle: 'Интерактивная демонстрация',
   commercialLabel: 'Условия подключения',
