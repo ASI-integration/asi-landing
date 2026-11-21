@@ -1,5 +1,5 @@
 import { getIronSession } from 'iron-session';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { resolveSessionCookieDomain } from '@/lib/auth/app-url';
 
 export type SessionData = {
@@ -14,9 +14,10 @@ export type SessionData = {
 export function getSessionCookieOptions(
   env: Readonly<Record<string, string | undefined>> = process.env,
   nodeEnv: string | undefined = process.env.NODE_ENV,
+  requestHost?: string | null,
 ) {
   const isProd = nodeEnv === 'production';
-  const domain = resolveSessionCookieDomain(env, nodeEnv);
+  const domain = resolveSessionCookieDomain(env, nodeEnv, requestHost);
   return {
     // OAuth redirects from accounts.google.com require a cross-site cookie in modern browsers.
     // Production www/apex keeps Domain=.asi-global.ru; staging stays host-only.
@@ -44,9 +45,10 @@ export function isSessionSecretConfigured(
 
 export async function getSession() {
   const cookieStore = await cookies();
+  const host = (await headers()).get('host');
   return getIronSession<SessionData>(cookieStore, {
     password: getSessionSecret(),
     cookieName: 'asi_session',
-    cookieOptions: getSessionCookieOptions(),
+    cookieOptions: getSessionCookieOptions(process.env, process.env.NODE_ENV, host),
   });
 }
