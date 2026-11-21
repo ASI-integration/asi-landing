@@ -159,9 +159,9 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
 
   const selectedPlanLabel = useMemo(() => {
     const plan = selectedPlanValue;
-    if (plan === 'small') return 'Базовый';
-    if (plan === 'growth') return 'Масштабирование';
-    return 'Крупный портфель';
+    if (plan === 'small') return 'Starter';
+    if (plan === 'growth') return 'Growth';
+    return 'Enterprise';
   }, [selectedPlanValue]);
 
   const googleReady = googleOAuthConfigured && !googleConfigLoading;
@@ -275,7 +275,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
   }, [googleReady, googleOAuthMode, googleClientId, mode, rental, selectedPlanValue, afterAuthRedirect, debugGoogle, router]);
   const demoMailto = useMemo(
     () =>
-      `mailto:${productSupportEmail}?subject=${encodeURIComponent(rental ? 'Подключение объекта к ASI' : 'Доступ к демо / тест (7 дней)')}&body=${encodeURIComponent('Здравствуйте! Хочу получить доступ к демо.\n\nКомпания / контакт:\n')}`,
+      `mailto:${productSupportEmail}?subject=${encodeURIComponent(rental ? 'Подключение объекта к ASI' : 'GuestAutopilot demo and onboarding')}&body=${encodeURIComponent(rental ? 'Здравствуйте! Хочу получить доступ к демо.\n\nКомпания / контакт:\n' : 'Hello, I would like to discuss onboarding.\n\nCompany / contact:\n')}`,
     [rental],
   );
 
@@ -284,7 +284,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
     if (emailRequestPendingRef.current || gisRequestPendingRef.current) return;
     setError('');
     if (!email.trim() || !password) {
-      setError('Укажите email и пароль.');
+      setError(rental ? 'Укажите email и пароль.' : 'Please enter your email and password.');
       return;
     }
 
@@ -302,13 +302,13 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
         const msg =
           (data && typeof data.message === 'string' && data.message.trim()) ||
           (data && typeof data.error === 'string' && data.error.trim()) ||
-          'Ошибка авторизации.';
-        setError(rental && res.status === 401 ? 'Неверный email или пароль.' : rental && !data.message ? 'Не удалось войти. Проверьте данные и попробуйте ещё раз.' : msg);
+          'Authentication failed.';
+        setError(rental && res.status === 401 ? 'Неверный email или пароль.' : rental && !data.message ? 'Не удалось войти. Проверьте данные и попробуйте ещё раз.' : rental ? msg : 'Could not sign in. Please check your details or contact support.');
         return;
       }
       router.push(afterAuthRedirect);
     } catch {
-      setError('Ошибка сети. Попробуйте ещё раз.');
+      setError(rental ? 'Ошибка сети. Попробуйте ещё раз.' : 'Network error. Please try again.');
     } finally {
       emailRequestPendingRef.current = false;
       setLoading(false);
@@ -318,11 +318,11 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
   const handleGoogle = () => {
     setError('');
     if (!googleOAuthConfigured || googleOAuthMode !== 'redirect') {
-      setError('Вход через Google пока недоступен.');
+      setError(rental ? 'Вход через Google пока недоступен.' : 'Google sign-in is not currently available. Use your email and password.');
       return;
     }
     setLoading(true);
-    setGoogleStatus('Открываем Google…');
+    setGoogleStatus(rental ? 'Открываем Google…' : 'Opening Google…');
     const debug = debugGoogle ? '1' : '0';
     const url = `/api/auth/google/start?${rental ? '' : `plan=${encodeURIComponent(String(selectedPlanValue))}&`}debug=${debug}&redirect=${encodeURIComponent(afterAuthRedirect)}`;
     window.location.assign(url);
@@ -333,7 +333,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
       <div className="w-full max-w-2xl">
         <div className={rental ? "bg-asi-paper border border-asi-border p-5 sm:p-8" : "bg-slate-50 border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm"}>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-            {rental ? 'Подключение объекта к ASI' : 'Начать 7‑дневный тест'}
+            {rental ? 'Подключение объекта к ASI' : 'Create your GuestAutopilot account'}
           </h1>
           {rental ? (
             <div className="mt-4 space-y-3 text-base text-slate-700">
@@ -342,21 +342,21 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
             </div>
           ) : (<>
           <p className="mt-2 text-slate-600">
-            Вы выбрали тариф <span className="font-semibold text-slate-900">{selectedPlanLabel}</span>. После регистрации вы получите доступ к кабинету и сможете подключить каналы.
+            Your selected plan is <span className="font-semibold text-slate-900">{selectedPlanLabel}</span>. Registration gives you access to your workspace; a 14-day property pilot begins only when the required integrations are verified. No automatic billing.
           </p>
 
           <div className="mt-6 grid sm:grid-cols-3 gap-3">
             <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <p className="text-sm font-medium text-slate-900">Тариф</p>
+              <p className="text-sm font-medium text-slate-900">Selected plan</p>
               <p className="mt-1 text-sm text-slate-600">{selectedPlanLabel}</p>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <p className="text-sm font-medium text-slate-900">Пробный период</p>
-              <p className="mt-1 text-sm text-slate-600">7 дней</p>
+              <p className="text-sm font-medium text-slate-900">Property pilot</p>
+              <p className="mt-1 text-sm text-slate-600">14 days after readiness</p>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-4">
-              <p className="text-sm font-medium text-slate-900">После теста</p>
-              <p className="mt-1 text-sm text-slate-600">Выберите формат в личном кабинете</p>
+              <p className="text-sm font-medium text-slate-900">After the pilot</p>
+              <p className="mt-1 text-sm text-slate-600">Only with separately confirmed terms and consent</p>
             </div>
           </div>
 
@@ -368,7 +368,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
               data-connect-google-status={googleReady ? 'ready' : googleConfigLoading ? 'checking' : 'unavailable'}
               data-google-oauth-env={googleOAuthEnv || undefined}
             >
-              <p className="text-sm font-semibold text-slate-900">Быстрый вход</p>
+              <p className="text-sm font-semibold text-slate-900">{rental ? 'Быстрый вход' : 'Quick sign-in'}</p>
               <p
                 className={`mt-2 flex items-center gap-2 text-xs font-medium ${
                   googleConfigLoading ? 'text-slate-500' : googleReady ? 'text-emerald-800' : 'text-amber-900'
@@ -382,14 +382,14 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
                   aria-hidden
                 />
                 {googleConfigLoading
-                  ? 'Проверяем доступность Google…'
+                  ? (rental ? 'Проверяем доступность Google…' : 'Checking Google availability…')
                   : googleReady
                     ? (googleOAuthMode === 'redirect'
                         ? 'Google: доступен'
                         : googleOAuthMode === 'gis'
                           ? 'Google: доступен'
                           : 'Google: недоступен')
-                    : 'Google: недоступен — выберите другой способ'}
+                    : (rental ? 'Google: недоступен — выберите другой способ' : 'Google sign-in unavailable — use email')}
               </p>
 
               {googleConfigLoading ? (
@@ -398,12 +398,12 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
                   disabled
                   className="mt-3 w-full px-5 py-3 rounded-xl bg-slate-200 text-slate-600 font-semibold cursor-wait"
                 >
-                  Проверяем…
+                  {rental ? 'Проверяем…' : 'Checking…'}
                 </button>
               ) : googleReady && googleOAuthMode === 'gis' ? (
                 <div className="mt-3 min-h-[44px]" data-testid="google-gis-visible-button">
-                  <div ref={gsiButtonHostRef} className="w-full min-w-0 overflow-hidden" aria-label="Войти через Google" />
-                  {loading ? <p className="mt-2 text-sm text-slate-600">Проверяем вход Google…</p> : null}
+                  <div ref={gsiButtonHostRef} className="w-full min-w-0 overflow-hidden" aria-label={rental ? 'Войти через Google' : 'Sign in with Google'} />
+                  {loading ? <p className="mt-2 text-sm text-slate-600">{rental ? 'Проверяем вход Google…' : 'Verifying Google sign-in…'}</p> : null}
                 </div>
               ) : googleReady ? (                <button
                   type="button"
@@ -411,14 +411,14 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
                   disabled={loading}
                   className="mt-3 w-full px-5 py-3 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {loading ? 'Открываем Google…' : 'Войти через Google'}
+                  {loading ? (rental ? 'Открываем Google…' : 'Opening Google…') : (rental ? 'Войти через Google' : 'Sign in with Google')}
                 </button>
               ) : rental ? (
                 <p className="mt-3 text-base text-slate-600">Вход через Google сейчас недоступен. Зарегистрируйтесь или войдите по почте ниже.</p>
               ) : (
                 <div className="mt-3 space-y-2">
                   <p className="text-sm text-slate-600">
-                    Вход через Google сейчас недоступен. Вы всё равно можете начать тест: зарегистрируйтесь по email или напишите нам.
+                    Google sign-in is unavailable. Create an account using email and password, or contact our team.
                   </p>
                   <a
                     href={telegramSupportBotUrl}
@@ -426,37 +426,37 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
                     rel="noopener noreferrer"
                     className="flex w-full items-center justify-center px-5 py-3 rounded-xl bg-slate-900 text-white font-semibold hover:bg-slate-800"
                   >
-                    Написать в Telegram
+                    Contact us on Telegram
                   </a>
                   <a
                     href={demoMailto}
                     className="flex w-full items-center justify-center px-5 py-3 rounded-xl border border-slate-900 text-slate-900 font-semibold hover:bg-slate-50"
                   >
-                    Запросить доступ по email
+                    Request access by email
                   </a>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-xs font-semibold text-slate-700">Другие способы</p>
+                    <p className="text-xs font-semibold text-slate-700">Other options</p>
                     <p className="mt-1 text-xs text-slate-600">
-                      Яндекс ID и VK ID пока не включены для входа. Можно использовать email или Telegram.
+                      Email and password are available. Other social sign-in options are not enabled.
                     </p>
                   </div>
                   <div className="pt-1 text-center">
                     <a
-                      href="/ru/contacts"
+                      href="/contacts"
                       className="text-sm text-slate-600 underline underline-offset-2 hover:text-slate-900 transition-colors"
                     >
-                      Страница контактов
+                      Contact page
                     </a>
                   </div>
                   <a href="#connect-email" className="block text-center text-sm text-slate-600 underline hover:text-slate-900">
-                    Или продолжить с паролем →
+                    Or use email and password →
                   </a>
                 </div>
               )}
               {googleStatus ? <p className="mt-2 text-xs text-slate-600">{googleStatus}</p> : null}
               {error ? <p role="alert" className="mt-2 text-base text-red-700">{error}</p> : null}
               <p className="mt-3 text-xs text-slate-500">
-                {rental ? 'Вы вернётесь к настройке после входа.' : 'Мы создадим рабочее пространство и запустим 7‑дневный тест.'}
+                {rental ? 'Вы вернётесь к настройке после входа.' : 'Account creation does not start a property trial, activate a subscription or charge your card.'}
               </p>
             </div>
 
@@ -474,7 +474,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
                     onClick={() => setMode('signup')}
                     disabled={loading}
                   >
-                    Регистрация
+                    {rental ? 'Регистрация' : 'Sign up'}
                   </button>
                   <button
                     type="button"
@@ -486,14 +486,14 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
                     onClick={() => setMode('login')}
                     disabled={loading}
                   >
-                    Вход
+                    {rental ? 'Вход' : 'Sign in'}
                   </button>
                 </div>
               </div>
 
               <form onSubmit={handleEmailAuth} className="mt-4 space-y-3">
                 <div>
-                  <label htmlFor="connect-email-input" className="block text-sm font-medium text-slate-600">Электронная почта</label>
+                  <label htmlFor="connect-email-input" className="block text-sm font-medium text-slate-600">{rental ? 'Электронная почта' : 'Email address'}</label>
                   <input
                     id="connect-email-input"
                     name="email"
@@ -503,12 +503,12 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
                     onChange={(e) => setEmail(e.target.value)}
                     type="email"
                     className="mt-1 w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900"
-                    placeholder="you@company.ru"
+                    placeholder={rental ? 'you@company.ru' : 'you@company.com'}
                     disabled={loading}
                   />
                 </div>
                 <div>
-                  <label htmlFor="connect-password" className="block text-sm font-medium text-slate-600">Пароль</label>
+                  <label htmlFor="connect-password" className="block text-sm font-medium text-slate-600">{rental ? 'Пароль' : 'Password'}</label>
                   <input
                     id="connect-password"
                     name="password"
@@ -519,7 +519,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
                     onChange={(e) => setPassword(e.target.value)}
                     type="password"
                     className="mt-1 w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900"
-                    placeholder="Минимум 6 символов"
+                    placeholder={rental ? 'Минимум 6 символов' : 'At least 6 characters'}
                     disabled={loading}
                   />
                 </div>
@@ -528,7 +528,7 @@ export default function OnboardingPageContent({ rental = false }: { rental?: boo
                   disabled={loading}
                   className="w-full px-5 py-3 rounded-xl bg-white border border-slate-900 text-slate-900 font-semibold hover:bg-slate-50 disabled:opacity-60"
                 >
-                  {loading ? 'Подождите…' : mode === 'signup' ? (rental ? 'Создать кабинет и продолжить →' : 'Создать аккаунт и начать тест') : 'Войти и продолжить →'}
+                  {loading ? (rental ? 'Подождите…' : 'Please wait…') : mode === 'signup' ? (rental ? 'Создать кабинет и продолжить →' : 'Create account and continue →') : (rental ? 'Войти и продолжить →' : 'Sign in and continue →')}
                 </button>
               </form>
             </div>
