@@ -70,7 +70,7 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 
-import { POST as acceptLegal } from '@/app/api/ru/legal/acceptances/route';
+import { GET as readLegal, POST as acceptLegal } from '@/app/api/ru/legal/acceptances/route';
 import { POST as saveConnection } from '@/app/api/cabinet/connect/route';
 import {
   RU_LEGAL_DOCUMENTS,
@@ -149,6 +149,16 @@ describe('RU legal onboarding contract', () => {
       'Электронная почта: support@asi-global.ru',
     ]);
     expect(requisites.paragraphs.some((line) => /телефон|tel:|\+7/i.test(line))).toBe(false);
+  });
+
+  it('responds with a safe 503 while RU legal acceptance storage is disabled', async () => {
+    vi.stubEnv('RU_LEGAL_ACCEPTANCE_PERSISTENCE_ENABLED', 'false');
+    const read = await readLegal();
+    expect(read.status).toBe(503);
+    expect((await read.json()).code).toBe('RU_LEGAL_LOCALIZATION_REVIEW_REQUIRED');
+    const attemptedWrite = await acceptLegal(request({ documentType: 'offer' }));
+    expect(attemptedWrite.status).toBe(503);
+    expect(fixture.inserted).toHaveLength(0);
   });
 
   it('fails closed unless the localization review gate is explicitly enabled', () => {
