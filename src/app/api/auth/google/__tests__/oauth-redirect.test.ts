@@ -89,6 +89,38 @@ describe('Google OAuth start redirect_uri', () => {
   });
 });
 
+describe('two-domain production OAuth callback isolation', () => {
+  for (const hostname of ['app.asi-global.ru', 'app.guestautopilot.com']) {
+    it('keeps the state-bearing callback on ' + hostname, async () => {
+      vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://www.asi-global.ru');
+      const session = {
+        userId: undefined as string | undefined,
+        googleOauthState: undefined as string | undefined,
+        googleOauthPlan: undefined as unknown,
+        googleOauthRedirect: undefined as string | undefined,
+        save: vi.fn(async () => undefined),
+      };
+      getSession.mockResolvedValue(session);
+      const { GET } = await import('../start/route');
+      const res = await GET(new Request('https://' + hostname + '/api/auth/google/start?redirect=/dashboard'));
+      expect(res.status).toBe(307);
+      const auth = new URL(res.headers.get('location')!);
+      expect(auth.searchParams.get('redirect_uri')).toBe('https://' + hostname + '/api/auth/google/callback');
+      expect(session.googleOauthState).toMatch(/^[0-9a-f]{32}$/);
+    });
+  }
+
+  it('rejects a forwarded attacker hostname before setting OAuth state', async () => {
+    vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://www.asi-global.ru');
+    const { GET } = await import('../start/route');
+    const res = await GET(new Request('https://app.asi-global.ru/api/auth/google/start', {
+      headers: { host: 'app.asi-global.ru', 'x-forwarded-host': 'attacker.example' },
+    }));
+    expect(res.status).toBe(400);
+    expect(getSession).not.toHaveBeenCalled();
+  });
+});
+
 describe('Google OAuth callback uses env-derived redirect_uri', () => {
   it('token exchange uses staging redirect when APP_URL is staging', async () => {
     vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://staging.asi-global.ru');
