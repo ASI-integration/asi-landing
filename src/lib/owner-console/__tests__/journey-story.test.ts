@@ -71,5 +71,9 @@ describe('public hospitality guest journey', () => {
     expect(onboarding).toContain("searchParams.get('mode') === 'login'");
     expect(onboarding).toContain('id="connect-email"');
     expect(onboarding).toContain("'/api/auth/login'");
+    const ruHeader = readFileSync(join(process.cwd(), 'src/components/ru/RuPublicNavHeader.tsx'), 'utf8');
+    expect(ruHeader).toContain("const RU_EMAIL_LOGIN_HREF = '/ru/connect?mode=login");
+    expect(ruHeader).toContain('Войти по email');
+    expect(ruHeader).toContain('href={RU_EMAIL_LOGIN_HREF}');
   });
 });
