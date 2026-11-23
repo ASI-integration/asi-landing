@@ -1,9 +1,7 @@
 // Planning contracts only. No credentials, authorizer, transport or executor ports.
-import {createHash} from 'node:crypto';
+import {must,hash} from './core.mjs';
+export {must,hash} from './core.mjs';
 import {decideQueue, WORK_ORDERS,BEGET_TASKS, ENGINE_PILOT, RELEASE} from '../strigunov4/ASI-STRIGUNOV4-MULTIJOB-20261020.mjs';
-
-export const must = (value, code) => { if (!value) throw Error(code); };
-export const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const id = value => typeof value === 'string' && /^[a-z][a-z0-9-]{0,79}$/.test(value);
 const text = value => typeof value === 'string' && value.trim().length > 0;
 const sha = value => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
