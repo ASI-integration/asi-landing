@@ -273,7 +273,7 @@ export function createProductAdapter(input, {verifyEvidence, workOrders, clock =
   const catalog = workOrders === undefined ? undefined : structuredClone(workOrders);
   must(catalog === undefined || (Array.isArray(catalog) && typeof clock === 'function'), 'FINITE_WORK_CATALOG_REQUIRED');
   must(catalog === undefined || (Number.isSafeInteger(maxConcurrentPlans) &&
-    maxConcurrentPlans >= 1 && maxConcurrentPlans <= 4), 'GOAL_CONCURRENCY_LIMIT');
+    maxConcurrentPlans >= 1 && maxConcurrentPlans <= 5), 'GOAL_CONCURRENCY_LIMIT');
   const contractHash = catalog === undefined ? hash(contract) : hash({contract, workOrders: catalog, maxConcurrentPlans});
   const proof = (evidence, snapshot, subject, criteria) => {
     must(evidence?.product === contract.id && evidence.contractHash === contractHash &&
