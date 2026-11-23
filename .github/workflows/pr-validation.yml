@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   source_validation:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, asi-vps-onecom]
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -455,7 +455,7 @@ jobs:
   validate:
     needs: [source_validation, channel-manager-recovery-postgres]
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, asi-vps-onecom]
     timeout-minutes: 5
     steps:
       - name: Require successful source jobs
@@ -483,7 +483,7 @@ jobs:
 
   channel-manager-recovery-postgres:
     name: channel-manager-recovery-postgres
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, asi-vps-onecom]
     timeout-minutes: 20
     # No GitHub API privileges in this job: PR SQL is untrusted test input.
     permissions: {}
