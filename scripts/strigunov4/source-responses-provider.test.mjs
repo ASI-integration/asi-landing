@@ -240,3 +240,27 @@ test('tool calls alongside an assistant message are not silently ignored',async(
     paths:['docs/coding-work.py']});
   assert.equal(r.reason,'PROVIDER_OUTPUT_INVALID');
 });
+
+test('a signed gpt-4.1-mini alias accepts only its exact official returned snapshot',async()=>{
+  const fixture=output();
+  const returned={...fixture,model:'gpt-4.1-mini-2025-04-14'};
+  const {model,record}=instance({response:returned,
+    overrides:{model:'gpt-4.1-mini'}});
+  const r=await model({id:'coding-work-1',baseSha:H40,
+    repository:'ASI-integration/asi-landing',laneId:'engine',
+    branch:'asi/beget-one-engine-20261028',objective:'Code',
+    paths:['docs/coding-work.py']});
+  assert.equal(r.status,'PROPOSED');
+  assert.equal(record.admissions.length,1);
+  assert.equal(record.calls[0].body.model,'gpt-4.1-mini');
+});
+
+test('an unlisted dated model is still rejected after native reservation',async()=>{
+  const {model}=instance({response:{...output(),model:'gpt-4.1-mini-2025-04-15'},
+    overrides:{model:'gpt-4.1-mini'}});
+  const r=await model({id:'coding-work-1',baseSha:H40,
+    repository:'ASI-integration/asi-landing',laneId:'engine',
+    branch:'asi/beget-one-engine-20261028',objective:'Code',
+    paths:['docs/coding-work.py']});
+  assert.equal(r.reason,'PROVIDER_MODEL_CHANGED_AFTER_RESERVATION');
+});

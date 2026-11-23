@@ -13,6 +13,16 @@ const ENDPOINT='https://api.openai.com/v1/responses';
 const sha=s=>createHash('sha256').update(s).digest('hex');
 const h64=/^[0-9a-f]{64}$/;
 const modelName=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,100}$/;
+// OpenAI may return the canonical dated snapshot when the signed request used
+// its published alias. Pin only these exact documented alias/snapshot pairs;
+// never accept a different family or an arbitrary suffix.
+const knownModelSnapshots=Object.freeze({
+  'gpt-4.1-mini':'gpt-4.1-mini-2025-04-14',
+  'gpt-4.1':'gpt-4.1-2025-04-14'
+});
+const returnedModelMatches=(requested,returned)=>
+  typeof returned==='string'&&
+  (returned===requested||knownModelSnapshots[requested]===returned);
 const identifier=/^[a-z0-9][a-z0-9-]{0,79}$/;
 const inputPath=/^[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)*\.(?:mjs|js|json|py)$/;
 const DEFAULT_REPOSITORY='ASI-integration/asi-landing';
@@ -203,7 +213,8 @@ export function createResponsesCodeProducer({model,apiKey,admitRequest,getContex
     try {
       const raw=JSON.parse(await readLimited(response));
       // No model substitution after a signed budget reserves a specific model.
-      if(raw?.model!==model)return reason('PROVIDER_MODEL_CHANGED_AFTER_RESERVATION');
+      if(!returnedModelMatches(model,raw?.model))
+        return reason('PROVIDER_MODEL_CHANGED_AFTER_RESERVATION');
       if(raw?.status==='incomplete')return reason('PROVIDER_OUTPUT_INCOMPLETE_NO_REPLAY');
       parsed=extraction(raw);
     }
