@@ -11,6 +11,7 @@ type DashboardNavItem = {
   href: string;
   key:
     | 'overview'
+    | 'data'
     | 'crm'
     | 'crmQueue'
     | 'reports'
@@ -35,7 +36,8 @@ type DashboardNavItem = {
 
 const navItems: DashboardNavItem[] = [
   { href: '/dashboard', key: 'overview', label: 'Обзор' },
-  { href: '/dashboard/onboarding', key: 'onboarding', label: 'Запуск объектов' },
+  { href: '/dashboard/data', key: 'data', label: 'Данные и изменения' },
+  { href: '/dashboard/onboarding', key: 'onboarding', label: 'Подробная настройка' },
   { href: '/dashboard/crm/queue', key: 'crmQueue', label: 'Очередь CRM' },
   { href: '/dashboard/crm', key: 'crm', label: 'CRM' },
   { href: '/dashboard/reports', key: 'reports', label: 'Мои отчёты' },
@@ -44,7 +46,7 @@ const navItems: DashboardNavItem[] = [
   { href: '/dashboard/communication', key: 'communication', label: 'Коммуникация' },
   { href: '/dashboard/ops', key: 'operations', label: 'Операции' },
   { href: '/dashboard/reservations', key: 'bookings', label: 'Единый календарь' },
-  { href: '/dashboard/booking-ops', key: 'bookingOps', label: 'Операции по броням' },
+  { href: '/dashboard/bookings-simple', key: 'bookingOps', label: 'Бронирования' },
   { href: '/dashboard/property-knowledge', key: 'propertyKnowledge', label: 'Данные объектов' },
   { href: '/dashboard/automations', key: 'automations', label: 'Автоматизация' },
   { href: '/dashboard/roadmap', key: 'roadmap', label: 'План ASI' },
@@ -56,10 +58,19 @@ const navItems: DashboardNavItem[] = [
   { href: '/dashboard/settings', key: 'settings', label: 'Настройки' },
 ] as const;
 
+// Keep the everyday dashboard focused. All original routes and permission checks
+// remain available under an explicit advanced-tools disclosure.
+const advancedNavKeys = new Set<DashboardNavItem['key']>([
+  'crm', 'crmQueue', 'operations', 'propertyKnowledge', 'automations', 'onboarding',
+  'roadmap', 'engineProgress', 'engineLive', 'strigunovGps',
+  'missionControl', 'development',
+]);
+
 function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const pathname = usePathname();
   const { session } = useSession();
+  const [advancedOpen, setAdvancedOpen] = useState<boolean | null>(null);
 
   const visibleNavItems = navItems.filter((item) => {
     if (item.key === 'crm' || item.key === 'crmQueue' || item.key === 'operations' || item.key === 'bookingOps' || item.key === 'propertyKnowledge') {
@@ -73,6 +84,30 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
     }
     return true;
   });
+  const primaryNavItems = visibleNavItems.filter((item) => !advancedNavKeys.has(item.key));
+  const advancedNavItems = visibleNavItems.filter((item) => advancedNavKeys.has(item.key));
+  // Preserve navigation context when following an existing technical deep link.
+  const onAdvancedRoute = advancedNavItems.some(
+    (item) => pathname === item.href || pathname.startsWith(item.href + '/'),
+  );
+  const showAdvanced = advancedOpen ?? onAdvancedRoute;
+
+  const renderNavLink = ({ href, key, label }: DashboardNavItem) => {
+    const isActive = pathname === href || (href !== '/dashboard' && pathname.startsWith(href + '/'));
+    return (
+      <Link
+        key={key}
+        href={href}
+        onClick={onClose}
+        aria-current={isActive ? 'page' : undefined}
+        className={`block rounded-md px-4 py-3 text-[15px] font-medium leading-6 transition-colors ${
+          isActive ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
+        }`}
+      >
+        {label ?? t(`dashboard.sidebar.${key}`)}
+      </Link>
+    );
+  };
 
   return (
     <>
@@ -95,24 +130,27 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
         >
           ASI
         </Link>
-        <nav className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y px-4 py-4 space-y-1.5">
-          {visibleNavItems.map(({ href, key, label }) => {
-            const isActive = pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
-            return (
-              <Link
-                key={key}
-                href={href}
-                onClick={onClose}
-                className={`block rounded-md px-4 py-3.5 text-[15px] font-medium leading-6 transition-colors ${
-                  isActive
-                    ? 'bg-slate-800 text-white'
-                    : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
-                }`}
+        <nav aria-label="Разделы кабинета" className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y px-4 py-4 space-y-1.5">
+          {primaryNavItems.map(renderNavLink)}
+          {advancedNavItems.length > 0 ? (
+            <>
+              <button
+                type="button"
+                aria-expanded={showAdvanced}
+                aria-controls="dashboard-advanced-nav"
+                onClick={() => setAdvancedOpen(!showAdvanced)}
+                className="mt-4 flex w-full items-center justify-between rounded-md border border-slate-700 px-4 py-3 text-left text-sm font-medium text-slate-300 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-200"
               >
-                {label ?? t(`dashboard.sidebar.${key}`)}
-              </Link>
-            );
-          })}
+                <span>Инструменты оператора</span>
+                <span aria-hidden="true">{showAdvanced ? '−' : '+'}</span>
+              </button>
+              {showAdvanced ? (
+                <div id="dashboard-advanced-nav" className="mt-2 space-y-1 border-l border-slate-700 pl-2">
+                  {advancedNavItems.map(renderNavLink)}
+                </div>
+              ) : null}
+            </>
+          ) : null}
         </nav>
       </aside>
     </>
