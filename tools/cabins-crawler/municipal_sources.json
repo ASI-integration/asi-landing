@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "purpose": "Actual owner-approved public municipal commercial lettings - first source Tier I London",
+  "user_agent": "ASI-Cabins-Research/0.1 (public council commercial inventory; read-only; contact: no direct outreach)",
+  "delay_seconds": 5,
+  "sources": [
+    {
+      "name": "Hackney Council commercial properties to let",
+      "parser": "hackney_council_cards_v1",
+      "market": "London",
+      "city": "London",
+      "enabled": true,
+      "url": "https://www.hackney.gov.uk/business-and-licensing/commercial-property/let-or-buy-commercial-properties",
+      "allowed_domains": [
+        "www.hackney.gov.uk"
+      ],
+      "licence": "UK-OGL-3.0",
+      "terms_url": "https://www.hackney.gov.uk/more-us/terms-use",
+      "licence_evidence": "Council states published data freely reusable under Open Government Licence. Only listing text, price, size, source URL and broker brochure links collected. Council/third-party images not copied.",
+      "robots_checked": "2026-11-04",
+      "preflight_status": "robots allowed, HTTP 200 and live commercial property cards from Windows device DESKTOP-I29K350",
+      "max_requests_per_check": 2,
+      "requires_lodging_zoning_review": true
+    }
+  ]
+}

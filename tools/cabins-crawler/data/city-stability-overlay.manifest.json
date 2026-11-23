@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-11-04T17:58:54.843612+00:00",
+  "all_markets": 500,
+  "city_stability_observed": 2,
+  "evergreen_properties_measured": 0,
+  "snapshot_years": [
+    2024,
+    2025
+  ],
+  "formula": {
+    "2025_hotel_occupancy_component_max": 35,
+    "hotel_occupancy_change_component_max": 30,
+    "domestic_market_share_component_max": 25,
+    "visitor_growth_component_max": 10
+  },
+  "warnings": [
+    "2-year proxy is not a long-run stability index or a verified booking forecast.",
+    "Moscow NF Group hotel benchmark and NYC CoStar hospitality market use different populations and methodologies.",
+    "Official ASI Evergreen Index and magnets require geocoded property address plus existing src/lib/location engine evidence; intentionally left null.",
+    "The country geopolitics/risk flag is NOT a city street-crime metric.",
+    "ADR in RUB vs USD must not be compared as profit and is not used in the stability score.",
+    "City-specific stability benchmarks missing for all other markets; their value is null, not zero."
+  ]
+}

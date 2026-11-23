@@ -1,0 +1,11 @@
+{"city": "London", "country": "United Kingdom", "country_code": "GB", "research_tier": "I-HIGH", "global_score": 80.75, "population_2025": 10416420, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Tōkyō (Tokyo)", "country": "Japan", "country_code": "JP", "research_tier": "I-HIGH", "global_score": 79.43, "population_2025": 33412512, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Paris", "country": "France", "country_code": "FR", "research_tier": "I-HIGH", "global_score": 78.93, "population_2025": 9381921, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Kuala Lumpur", "country": "Malaysia", "country_code": "MY", "research_tier": "I-HIGH", "global_score": 74.75, "population_2025": 8443731, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Dubai", "country": "United Arab Emirates", "country_code": "AE", "research_tier": "I-HIGH", "global_score": 74.22, "population_2025": 5283789, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Madrid", "country": "Spain", "country_code": "ES", "research_tier": "I-HIGH", "global_score": 70.65, "population_2025": 5583601, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Barcelona", "country": "Spain", "country_code": "ES", "research_tier": "I-HIGH", "global_score": 69.28, "population_2025": 3982704, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Milan", "country": "Italy", "country_code": "IT", "research_tier": "I-HIGH", "global_score": 68.38, "population_2025": 2599022, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Roma (Rome)", "country": "Italy", "country_code": "IT", "research_tier": "I-HIGH", "global_score": 68.02, "population_2025": 2376474, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "Istanbul", "country": "Türkiye", "country_code": "TR", "research_tier": "I-HIGH", "global_score": 66.55, "population_2025": 15014763, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
+{"city": "New York City", "country": "United States of America", "country_code": "US", "research_tier": "I-HIGH", "global_score": 61.0, "population_2025": 13920148, "risk_gate": "BASIC_COUNTRY_CHECK_PASS"}
