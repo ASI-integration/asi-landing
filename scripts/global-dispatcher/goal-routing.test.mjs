@@ -131,3 +131,85 @@ test('goal routing drives real isolated parallel preparation and existing Engine
  const receipt=JSON.parse(await fs.readFile(store.file('receipts.json'))).completed[0];
  assert.equal(receipt.reportSha256,digest(await fs.readFile(path.join(root,'reports',receipt.report))));
 });
+
+test('task triage refuses no-value work BEFORE a durable routing reservation',async t=>{
+ const f=await fixture(t),s=f.snapshot();
+ const triage=()=>({schema:'asi.task-value-assessment.v1',
+   taskId:'wrong-id',goalPlanHash:'b'.repeat(64),decision:'ACCEPTED',
+   outcome:'Unhelpful task',expectedBenefit:'No measurable product value',
+   acceptanceEvidence:['verified-result'],reason:'Unverified input',
+   alternative:'Provide a legitimate scoped goal.',possibleDuplicates:[]});
+ const dispatcher=()=>createGlobalDispatcher({stateDir:f.stateDir,
+   adapters:[{...f.adapter(),triage}]});
+ const first=await dispatcher().plan({[f.contract.id]:s});
+ assert.equal(first.selected,null);
+ assert.equal(first.status,'BLOCKED');
+ assert.equal(first.products[0].intakeDecision.status,'NEEDS_OWNER_DECISION');
+ const data=(await f.read()).state.products[0];
+ assert.equal(data.planned.length,0);
+ assert.equal(data.intake.length,2);
+ assert.equal(data.intake[0].status,'NEEDS_OWNER_DECISION');
+ const second=await dispatcher().plan({[f.contract.id]:s});
+ assert.equal(second.selected,null);assert.equal((await f.read()).state.products[0].intake.length,2);
+});
+test('triage records one accepted job, rejects same deliverable with new ID',async t=>{
+ const f=await fixture(t),s=f.snapshot();
+ const triage=({candidate,goalGraph})=>({
+   schema:'asi.task-value-assessment.v1',taskId:candidate.id,
+   goalPlanHash:goalGraph.planHash,decision:'ACCEPTED',
+   outcome:'Complete the same observable release upgrade',
+   expectedBenefit:'A verified active Engine on Beget with real durable receipt',
+   acceptanceEvidence:['verified-result'],reason:'Task has an observable product result',
+   alternative:'Continue the already admitted task.',possibleDuplicates:[]});
+ const dispatcher=()=>createGlobalDispatcher({stateDir:f.stateDir,
+   adapters:[{...f.adapter(),triage}]});
+ const first=await dispatcher().plan({[f.contract.id]:s});
+ assert.equal(first.selected.task.id,'prepare-left');
+ assert.equal(first.selected.executable,false);assert.equal(first.selected.authority,null);
+ const second=await dispatcher().plan({[f.contract.id]:s});
+ assert.equal(second.selected,null);
+ const state=(await f.read()).state.products[0];
+ assert.equal(state.planned.length,1);
+ assert.equal(state.intake.find(x=>x.id==='prepare-right').status,'DUPLICATE');
+});
+test('same protected path with a different goal cannot run concurrently',async t=>{
+ const f=await fixture(t),s=f.snapshot();
+ const triage=({candidate,goalGraph})=>({
+   schema:'asi.task-value-assessment.v1',taskId:candidate.id,
+   goalPlanHash:goalGraph.planHash,decision:'ACCEPTED',
+   outcome:'Deliver specifically '+candidate.id+' to real production',
+   expectedBenefit:'One observable useful change with a physical receipt',
+   acceptanceEvidence:['verified-result'],reason:'Within product goal',
+   alternative:'Wait for first committed task.',possibleDuplicates:[]});
+ const dispatcher=()=>createGlobalDispatcher({stateDir:f.stateDir,
+   adapters:[{...f.adapter(),triage}]});
+ assert.equal((await dispatcher().plan({[f.contract.id]:s})).selected.task.id,'prepare-left');
+ const second=await dispatcher().plan({[f.contract.id]:s});
+ assert.equal(second.selected,null);
+ assert.equal((await f.read()).state.products[0].intake[1].status,'BLOCKED_DEPENDENCY');
+});
+
+test('a useful sibling is selected after refusal; rejection remains durable',async t=>{
+ const f=await fixture(t),s=f.snapshot();
+ const triage=({candidate,goalGraph})=>({
+   schema:'asi.task-value-assessment.v1',taskId:candidate.id,
+   goalPlanHash:goalGraph.planHash,
+   decision:candidate.id==='prepare-left'?'NO_VALUE':'ACCEPTED',
+   outcome:'Complete the concrete source work '+candidate.id,
+   expectedBenefit:'A measurable verified effect for the active Engine goal',
+   acceptanceEvidence:['verified-result'],
+   reason:candidate.id==='prepare-left'?'This step is redundant':'Concrete independent result',
+   alternative:'Skip the redundant step; use one approved alternate.',
+   possibleDuplicates:[]
+ });
+ const dispatcher=createGlobalDispatcher({stateDir:f.stateDir,
+   adapters:[{...f.adapter(),triage}]});
+ const r=await dispatcher.plan({[f.contract.id]:s});
+ assert.equal(r.selected.task.id,'prepare-right');
+ assert.equal(r.products[0].status,'READY');
+ assert.equal(r.products[0].intakeDecisions[0].status,'NO_VALUE');
+ assert.equal(r.products[0].candidates.length,1);
+ const st=(await f.read()).state.products[0];
+ assert.equal(st.planned.length,1);
+ assert.deepEqual(st.intake.map(x=>x.status),['NO_VALUE','ACCEPTED']);
+});
