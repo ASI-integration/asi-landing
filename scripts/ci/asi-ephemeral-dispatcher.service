@@ -1,0 +1,20 @@
+[Unit]
+Description=ASI ephemeral KVM dispatcher for allowed CI jobs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=administrator
+Group=kvm
+Environment=ASI_PAID_CALLS_ENABLED=NO
+Environment=ASI_GLOBAL_CAP_KOPECKS=0
+Environment=ASI_DISPATCHER_EXECUTE=NO
+ExecStartPre=/usr/local/sbin/asi-ephemeral-dispatcher.sh recover
+ExecStart=/usr/local/sbin/asi-ephemeral-dispatcher.sh serve
+Restart=always
+RestartSec=30
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

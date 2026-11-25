@@ -4,7 +4,18 @@ import {readFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
-const workflow=readFileSync(new URL('../../../.github/workflows/pr-validation.yml',import.meta.url),'utf8');
+function offlineSuite(args){
+  const env={...process.env};
+  for(const key of Object.keys(env)){
+    if(key.startsWith('NODE_TEST')||key.startsWith('NODE_CHANNEL')) delete env[key];
+  }
+  return spawnSync(process.execPath,args,{
+    cwd:fileURLToPath(new URL('../../..',import.meta.url)),
+    encoding:'utf8',timeout:90000,execArgv:[],env,
+  });
+}
+
+const workflow=readFileSync(new URL('../../../.github/workflows/pr-validation.yml',import.meta.url),'utf8').replace(/\r\n/g,'\n');
 const jobs=Object.fromEntries([...workflow.split('\njobs:\n')[1].matchAll(/^  ([a-z_-]+):\n([\s\S]*?)(?=^  [a-z_-]+:\n|$(?![\s\S]))/gm)]
   .map(m=>[m[1],m[2]]));
 
@@ -58,8 +69,13 @@ test('trusted boundary executes protected base only and retains independent v0 a
 });
 
 test('reviewer no-spend negatives stay in the offline suite',()=>{
-  const root=fileURLToPath(new URL('../../..',import.meta.url));
-  const result=spawnSync(process.execPath,['--test','scripts/agent-os/__tests__/reviewer-permit.test.mjs'],
-    {cwd:root,encoding:'utf8',timeout:60000});
+  const result=offlineSuite(['--test','scripts/agent-os/__tests__/reviewer-permit.test.mjs']);
   assert.equal(result.status,0,(result.stdout||'')+(result.stderr||''));
+  assert.match(result.stdout||'',/# pass 5|ℹ pass 5/);
+});
+
+test('ephemeral dispatcher decisions stay in the offline suite',()=>{
+  const result=offlineSuite(['--test','scripts/ci/ephemeral-dispatcher.test.mjs']);
+  assert.equal(result.status,0,(result.stdout||'')+(result.stderr||''));
+  assert.match(result.stdout||'',/# pass 6|ℹ pass 6/);
 });
