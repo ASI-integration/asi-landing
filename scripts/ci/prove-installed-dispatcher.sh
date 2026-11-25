@@ -48,8 +48,8 @@ case "\$2" in
   'repos/ASI-integration/asi-landing/actions/runs?status=in_progress&per_page=20') echo '{"workflow_runs":[{"id":40,"workflow_id":101,"event":"pull_request","head_sha":"$SHA","run_attempt":1,"head_repository":{"full_name":"ASI-integration/asi-landing"},"pull_requests":[{"number":687}]}]}' ;;
   repos/ASI-integration/asi-landing/actions/runners?per_page=100) echo '{"total_count":0,"runners":[]}' ;;
   repos/ASI-integration/asi-landing/commits/main) echo '{"sha":"$MAIN"}' ;;
-  repos/ASI-integration/asi-landing/actions/runs/40/jobs?per_page=100) echo '{"jobs":[{"id":7,"name":"source_validation","status":"queued","conclusion":null,"labels":["self-hosted","asi-40-1-source_validation"]}]}' ;;
-  repos/ASI-integration/asi-landing/actions/runs/51/jobs?per_page=100) echo '{"jobs":[{"id":11,"name":"source_validation","status":"queued","conclusion":null,"labels":["self-hosted","asi-51-1-source_validation"]}]}' ;;
+  repos/ASI-integration/asi-landing/actions/runs/40/jobs?per_page=100) echo '{"jobs":[{"id":7,"name":"source_validation","status":"queued","conclusion":null,"labels":["asi-40-1-source_validation"]}]}' ;;
+  repos/ASI-integration/asi-landing/actions/runs/51/jobs?per_page=100) echo '{"jobs":[{"id":11,"name":"source_validation","status":"queued","conclusion":null,"labels":["asi-51-1-source_validation"]}]}' ;;
   repos/ASI-integration/asi-landing/pulls/687) echo '{"head":{"sha":"$SHA"}}' ;;
   repos/ASI-integration/asi-landing/pulls/688) echo '{"head":{"sha":"$SHA"}}' ;;
   'repos/ASI-integration/asi-landing/issues/687/comments?per_page=100&page=1') echo '[{"user":{"id":207600140,"type":"User"},"author_association":"OWNER","performed_via_github_app":null,"body":"ASI-OWNER-APPROVE:CONTRACT-CHANGE:687:$SHA"}]' ;;
@@ -154,10 +154,12 @@ for rel in usr/local/sbin/asi-ephemeral-dispatcher.sh usr/local/sbin/asi-gold-v3
 done
 rm -rf -- "$ROOT2"
 
-mkdir -p "$WORK/guest"
+mkdir -p "$WORK/guest" "$WORK/run-40-1-source_validation/guest-1"
 printf 'disk\n' > "$WORK/guest/disk.qcow2"
 printf 'iso\n' > "$WORK/guest/seed.iso"
 printf 'log\n' > "$WORK/guest/console.log"
+printf 'disk\n' > "$WORK/run-40-1-source_validation/guest-1/disk.qcow2"
+printf 'log\n' > "$WORK/run-40-1-source_validation/guest-1/console.log"
 printf 'keep\n' > "$STATE/outside.txt"
 ln -s "$STATE/outside.txt" "$WORK/guest/evil.qcow2"
 python3 -c 'import os,sys; os.execv("/bin/sleep", ["qemu-system-x86_64", "30", sys.argv[1]])' "$WORK/guest" &
@@ -167,7 +169,9 @@ sleep 0.2
 if kill -0 "$guest_pid" 2>/dev/null; then echo 'GUEST_STILL_RUNNING' >&2; exit 1; fi
 test ! -e "$WORK/guest/disk.qcow2"
 test ! -e "$WORK/guest/seed.iso"
+test ! -e "$WORK/run-40-1-source_validation/guest-1/disk.qcow2"
 test "$(cat "$WORK/guest/console.log")" = log
+test "$(cat "$WORK/run-40-1-source_validation/guest-1/console.log")" = log
 test "$(cat "$STATE/outside.txt")" = keep
 test -L "$WORK/guest/evil.qcow2"
 test -f "$GOLD"

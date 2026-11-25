@@ -10,8 +10,24 @@ umask 077
 MODE="${1:-preflight}"
 [[ "$MODE" == preflight || "$MODE" == gold || "$MODE" == run || "$MODE" == run-one || "$MODE" == run-one-hook ]] || { echo 'USAGE: script preflight|gold|run|run-one' >&2; exit 2; }
 if [[ "$MODE" == run-one-hook ]]; then
-  [[ "${GITHUB_RUN_ID:-}" == "${ASI_EXPECT_RUN_ID:?}" && "${GITHUB_RUN_ATTEMPT:-}" == "${ASI_EXPECT_RUN_ATTEMPT:?}" && "${GITHUB_JOB:-}" == "${ASI_EXPECT_JOB_NAME:?}" && "${GITHUB_SHA:-}" == "${ASI_EXPECT_HEAD:?}" ]] || { echo 'BLOCKED: ASSIGNED_JOB_MISMATCH' >&2; exit 97; }
-  echo 'ASSIGNED_JOB_MATCH'
+  [[ "$(id -u)" -ne 0 ]] || { echo 'BLOCKED: HOOK_RAN_AS_ROOT' >&2; exit 97; }
+  if [[ "${ASI_HOOK_EXEC_CHECK:-}" == 1 ]]; then
+    [[ -w "$0" ]] && { echo 'BLOCKED: HOOK_WRITABLE_BY_RUNNER' >&2; exit 97; }
+    echo "ASI_HOOK_EXEC_AS_RUNNER user=$(id -un) uid=$(id -u)"
+    exit 0
+  fi
+  [[ "${GITHUB_RUN_ID:-}" == "${ASI_EXPECT_RUN_ID:?}" && "${GITHUB_RUN_ATTEMPT:-}" == "${ASI_EXPECT_RUN_ATTEMPT:?}" && "${GITHUB_JOB:-}" == "${ASI_EXPECT_JOB_NAME:?}" ]] || { echo 'BLOCKED: ASSIGNED_JOB_MISMATCH' >&2; exit 97; }
+  if [[ "${GITHUB_EVENT_NAME:-}" == pull_request ]]; then
+    [[ -n "${GITHUB_EVENT_PATH:-}" && -f "${GITHUB_EVENT_PATH}" ]] || { echo 'BLOCKED: PR_EVENT_MISSING' >&2; exit 97; }
+    pr_head=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(((d.get("pull_request") or {}).get("head") or {}).get("sha") or "")' "$GITHUB_EVENT_PATH")
+    merge_sha=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print((d.get("pull_request") or {}).get("merge_commit_sha") or "")' "$GITHUB_EVENT_PATH")
+    [[ "$pr_head" == "${ASI_EXPECT_HEAD:?}" ]] || { echo 'BLOCKED: PR_HEAD_MISMATCH' >&2; exit 97; }
+    [[ -n "$merge_sha" && "${GITHUB_SHA:-}" == "$merge_sha" ]] || { echo 'BLOCKED: MERGE_SHA_MISMATCH' >&2; exit 97; }
+    [[ "${GITHUB_SHA:-}" != "$pr_head" ]] || { echo 'BLOCKED: MERGE_SHA_IS_PR_HEAD' >&2; exit 97; }
+  else
+    [[ "${GITHUB_SHA:-}" == "${ASI_EXPECT_HEAD:?}" ]] || { echo 'BLOCKED: HEAD_MISMATCH' >&2; exit 97; }
+  fi
+  echo "ASI_ASSIGNED_JOB_MATCH user=$(id -un) uid=$(id -u)"
   exit 0
 fi
 if [[ "$MODE" == run-one ]]; then
@@ -101,11 +117,11 @@ if not job or job.get('status') != 'queued' or job.get('conclusion') or job.get(
     fail('JOB_NOT_QUEUED')
 job_labels = names(job.get('labels'))
 common = {'linux', 'x64', 'asi-vps-onecom'}
-if job_labels & common:
+if job_labels & (common | {'self-hosted'}):
     fail('COMMON_LABEL_BLOCK')
-if job_labels != {'self-hosted', route}:
+if job_labels != {route}:
     fail('ROUTE_MISMATCH')
-runner_labels = {'self-hosted', route}
+runner_labels = {route}
 for status in ('queued', 'in_progress'):
     listed = gh(f'repos/{repo}/actions/runs?status={status}&per_page=20')
     for run in listed.get('workflow_runs') or []:
@@ -122,7 +138,7 @@ safe = re.compile(r'[A-Za-z0-9_.:/,-]+')
 values = {
     'HEAD': head,
     'ROUTE_LABEL': route,
-    'RUN_LABELS': 'self-hosted,' + route,
+    'RUN_LABELS': route,
     'ADMITTED_RUN_ID': str(run_id),
     'ADMITTED_ATTEMPT': str(attempt),
     'ADMITTED_JOB_ID': str(requested),
@@ -136,7 +152,10 @@ PY
   # shellcheck disable=SC1090
   source "$plan"
   rm -f -- "$plan"
-  echo "RUN_ONE_ADMITTED label=${RUN_LABELS} job=${ADMITTED_JOB_ID}"
+  work_base=${ASI_WORK_DIR:-/var/tmp/asi-ephemeral-dispatcher}
+  [[ "$work_base" == /* && "$work_base" != / && "$work_base" != *..* ]] || { echo 'BLOCKED: RECOVERY_PATHS' >&2; exit 2; }
+  WORK="${work_base}/run-${ADMITTED_RUN_ID}-${ADMITTED_ATTEMPT}-${ADMITTED_JOB_NAME}"
+  echo "RUN_ONE_ADMITTED label=${RUN_LABELS} job=${ADMITTED_JOB_ID} work=${WORK}"
 fi
 [[ "$EUID" -ne 0 ]] || { echo 'Run as administrator, NOT as root (gh auth belongs to administrator)' >&2; exit 2; }
 [[ "${ASI_PAID_CALLS_ENABLED:-NO}" == NO ]] || { echo 'BLOCKED: paid mode is enabled in shell' >&2; exit 2; }
@@ -154,7 +173,9 @@ RUNNER_USER='asi-landing-kvm'
 CACHE='/var/cache/asi-landing-kvm'
 GOLD_DIR="$CACHE/gold-v32"
 GOLD="$GOLD_DIR/ubuntu-noble-docker-nodejs-actions-runner.qcow2"
-WORK="/var/tmp/asi-landing-kvm-687-v32-${HEAD:0:12}-fetch-$MODE"
+if [[ "$MODE" != run-one ]]; then
+  WORK="/var/tmp/asi-landing-kvm-687-v32-${HEAD:0:12}-fetch-$MODE"
+fi
 IMAGE='noble-server-cloudimg-amd64.img'
 IMAGE_URL="https://cloud-images.ubuntu.com/noble/current/$IMAGE"
 SUMS_URL='https://cloud-images.ubuntu.com/noble/current/SHA256SUMS'
@@ -261,7 +282,7 @@ sudo -n install -d -m 0700 "$CACHE/verify"
 cleanup() {
   set +e
   if [[ -n "$QEMU_PID" ]]; then
-    sudo -n pkill -TERM -u "$RUNNER_USER" -f 'qemu-system-x86_64.*asi-landing-kvm-687-v32' 2>/dev/null || :
+    sudo -n pkill -TERM -u "$RUNNER_USER" -f "qemu-system-x86_64.*${WORK}" 2>/dev/null || :
     kill "$QEMU_PID" 2>/dev/null || :
     wait "$QEMU_PID" 2>/dev/null || :
   fi
@@ -645,8 +666,9 @@ fi
 if [[ "$MODE" == run-one ]]; then
   RUN_LABELS="${RUN_LABELS:?}"
   case ",${RUN_LABELS}," in
-    *,linux,*|*,x64,*|*,asi-vps-onecom,*) fatal 'COMMON_LABEL_BLOCK' ;;
+    *,self-hosted,*|*,linux,*|*,x64,*|*,asi-vps-onecom,*) fatal 'COMMON_LABEL_BLOCK' ;;
   esac
+  [[ "$RUN_LABELS" == "asi-${ADMITTED_RUN_ID}-${ADMITTED_ATTEMPT}-${ADMITTED_JOB_NAME}" ]] || fatal 'ROUTE_MISMATCH'
 else
   RUN_LABELS='self-hosted,linux,x64,asi-vps-onecom'
 fi
@@ -664,7 +686,7 @@ if len(match)!=1: raise SystemExit('BLOCKED: AUTHORIZED_JOB_NOT_QUEUED')
 labels=[]
 for label in match[0].get('labels') or []:
     labels.append(label.lower() if isinstance(label,str) else str(label.get('name','')).lower())
-if set(labels)!={'self-hosted',route} or {'linux','x64','asi-vps-onecom'} & set(labels):
+if set(labels)!={route} or {'self-hosted','linux','x64','asi-vps-onecom'} & set(labels):
     raise SystemExit('BLOCKED: ROUTE_MISMATCH')
 PY
     echo "JOB_SLOT_1: queued=1 run=$run_id job=$ADMITTED_JOB_ID label=$RUN_LABELS"
@@ -771,7 +793,7 @@ echo 'ASI_NODE_FETCH_PROXY_SMOKE_PASS' >/dev/ttyS0
 REG_TOKEN=$(curl --noproxy '*' --fail --silent --show-error \
   --connect-timeout 8 --max-time 20 http://10.0.2.101:3129/registration)
 [[ -n "$REG_TOKEN" ]] || { echo 'REGISTRATION_TOKEN_MISSING'; exit 96; }
-RUNNER_ALLOW_RUNASROOT='' runuser -u runner -- env http_proxy="$PROXY" https_proxy="$PROXY" HTTP_PROXY="$PROXY" HTTPS_PROXY="$PROXY" ./config.sh --unattended --url https://github.com/ASI-integration/asi-landing --token "$REG_TOKEN" --name '__NAME__' --labels __LABELS__ --ephemeral --disableupdate --work _work
+RUNNER_ALLOW_RUNASROOT='' runuser -u runner -- env http_proxy="$PROXY" https_proxy="$PROXY" HTTP_PROXY="$PROXY" HTTPS_PROXY="$PROXY" ./config.sh --unattended --url https://github.com/ASI-integration/asi-landing --token "$REG_TOKEN" --name '__NAME__' __LABEL_ARGS__ --ephemeral --disableupdate --work _work
 unset REG_TOKEN
 # Never execute a second job. GitHub auto-deregisters ephemeral runners.
 # Delete the bootstrap and cloud-init user-data (registration token) before PR code.
@@ -796,30 +818,52 @@ echo "ASI_RUNNER_ONE_JOB_EXIT_CODE=$code" >/dev/ttyS0
 exit "$code"
 '''
 hook=''
+label_args='--labels '+LABELS
 if MODE=='run-one':
+    label_args='--no-default-labels --labels '+LABELS
     hook='''install -d -o root -g root -m 0755 /usr/local/lib/asi-ci
 cat > /usr/local/lib/asi-ci/verify-assigned-job.sh <<'HOOK'
 #!/bin/bash
 set -euo pipefail
+[[ "$(id -u)" -ne 0 ]] || { echo HOOK_RAN_AS_ROOT; exit 97; }
+if [[ "${ASI_HOOK_EXEC_CHECK:-}" == 1 ]]; then
+  [[ -w /usr/local/lib/asi-ci/verify-assigned-job.sh ]] && { echo HOOK_WRITABLE_BY_RUNNER; exit 97; }
+  echo "ASI_HOOK_EXEC_AS_RUNNER user=$(id -un) uid=$(id -u)"
+  exit 0
+fi
 [[ "${GITHUB_RUN_ID:-}" == "%s" ]] || { echo ASSIGNED_JOB_MISMATCH; exit 97; }
 [[ "${GITHUB_RUN_ATTEMPT:-}" == "%s" ]] || { echo ASSIGNED_JOB_MISMATCH; exit 97; }
 [[ "${GITHUB_JOB:-}" == "%s" ]] || { echo ASSIGNED_JOB_MISMATCH; exit 97; }
-[[ "${GITHUB_SHA:-}" == "%s" ]] || { echo ASSIGNED_JOB_MISMATCH; exit 97; }
-echo ASI_ASSIGNED_JOB_MATCH
+if [[ "${GITHUB_EVENT_NAME:-}" == pull_request ]]; then
+  [[ -n "${GITHUB_EVENT_PATH:-}" && -f "${GITHUB_EVENT_PATH}" ]] || { echo PR_EVENT_MISSING; exit 97; }
+  pr_head=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(((d.get("pull_request") or {}).get("head") or {}).get("sha") or "")' "$GITHUB_EVENT_PATH")
+  merge_sha=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print((d.get("pull_request") or {}).get("merge_commit_sha") or "")' "$GITHUB_EVENT_PATH")
+  [[ "$pr_head" == "%s" ]] || { echo PR_HEAD_MISMATCH; exit 97; }
+  [[ -n "$merge_sha" && "${GITHUB_SHA:-}" == "$merge_sha" ]] || { echo MERGE_SHA_MISMATCH; exit 97; }
+  [[ "${GITHUB_SHA:-}" != "$pr_head" ]] || { echo MERGE_SHA_IS_PR_HEAD; exit 97; }
+else
+  [[ "${GITHUB_SHA:-}" == "%s" ]] || { echo HEAD_MISMATCH; exit 97; }
+fi
+echo "ASI_ASSIGNED_JOB_MATCH user=$(id -un) uid=$(id -u)" >/dev/ttyS0
 HOOK
-chmod 0700 /usr/local/lib/asi-ci/verify-assigned-job.sh
+chown root:root /usr/local/lib/asi-ci/verify-assigned-job.sh
+chmod 0755 /usr/local/lib/asi-ci/verify-assigned-job.sh
+runuser -u runner -- env ASI_HOOK_EXEC_CHECK=1 /usr/local/lib/asi-ci/verify-assigned-job.sh >/dev/ttyS0
 export ACTIONS_RUNNER_HOOK_JOB_STARTED=/usr/local/lib/asi-ci/verify-assigned-job.sh
-''' % (RUN_ID, ATTEMPT, JOB_NAME, HEAD)
+''' % (RUN_ID, ATTEMPT, JOB_NAME, HEAD, HEAD)
     name='asi-%s-%s-%s' % (RUN_ID, ATTEMPT, JOB_ID)
 else:
     name='asi-landing-kvm-687-'+ITER
-bootstrap=bootstrap.replace('__ITER__',ITER).replace('__LABELS__',LABELS).replace('__NAME__',name).replace('__HOOK__',hook)
+bootstrap=bootstrap.replace('__ITER__',ITER).replace('__LABEL_ARGS__',label_args).replace('__NAME__',name).replace('__HOOK__',hook)
 if MODE=='run-one':
     assert 'linux,x64,asi-vps-onecom' not in bootstrap
-    assert 'ACTIONS_RUNNER_HOOK_JOB_STARTED' in bootstrap
-    assert LABELS=='self-hosted,'+('asi-%s-%s-%s' % (RUN_ID, ATTEMPT, JOB_NAME))
+    assert '--no-default-labels --labels '+LABELS in bootstrap
+    assert 'self-hosted' not in label_args
+    assert 'chmod 0755 /usr/local/lib/asi-ci/verify-assigned-job.sh' in bootstrap
+    assert 'merge_commit_sha' in bootstrap
+    assert LABELS=='asi-%s-%s-%s' % (RUN_ID, ATTEMPT, JOB_NAME)
 assert '__TOKEN__' not in bootstrap
-assert '__LABELS__' not in bootstrap and '__HOOK__' not in bootstrap
+assert '__LABEL_ARGS__' not in bootstrap and '__HOOK__' not in bootstrap
 userdata='#cloud-config\nssh_pwauth: false\ndisable_root: true\nusers: [default]\nwrite_files:\n  - path: /usr/local/sbin/asi-landing-bootstrap\n    owner: root:root\n    permissions: "0700"\n    encoding: b64\n    content: '+base64.b64encode(bootstrap.encode()).decode()+'\nruncmd:\n  - [bash, /usr/local/sbin/asi-landing-bootstrap]\n'
 (dst/'user-data').write_text(userdata)
 (dst/'meta-data').write_text('instance-id: asi-landing-687-'+ITER+'\nlocal-hostname: asi-landing-ephem\n')
@@ -894,6 +938,10 @@ TOKEN_PID=''
   sudo -n rm -f -- "$GUEST/disk.qcow2" "$GUEST/seed.iso"
   [[ "$vmrc" == 0 ]] || fatal "VM $iteration failed; check $GUEST/console.log before repeating; no blind replay"
   sudo -n grep -q 'ASI_SEED_DEVICE_DETACHED_BEFORE_JOB' "$GUEST/console.log" || fatal 'Guest seed was not detached before job'
+  if [[ "$MODE" == run-one ]]; then
+    sudo -n grep -q 'ASI_HOOK_EXEC_AS_RUNNER user=runner' "$GUEST/console.log" || fatal 'Job hook was not executed by the runner user'
+    sudo -n grep -q 'ASI_ASSIGNED_JOB_MATCH user=runner' "$GUEST/console.log" || fatal 'Assigned job was not confirmed by the runner user'
+  fi
   sudo -n grep -q 'ASI_RUNNER_ONE_JOB_EXIT_CODE=0' "$GUEST/console.log" || fatal 'Guest did not attest successful ephemeral runner exit'
   sleep 8
   # Fail closed if any job failed; no automatically repeated CI effects.

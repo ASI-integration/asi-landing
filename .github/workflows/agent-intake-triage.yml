@@ -20,7 +20,8 @@ concurrency:
 
 jobs:
   triage:
-    runs-on: [self-hosted, "asi-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}"]
+    name: triage
+    runs-on: asi-${{ github.run_id }}-${{ github.run_attempt }}-triage
     timeout-minutes: 10
     steps:
       - name: Checkout

@@ -29,10 +29,12 @@ test('required validate remains aggregate admission, never a source-only green c
   assert.doesNotMatch(jobs.source_validation,/check-demo-release.mjs --ci/);
   assert.doesNotMatch(jobs.validate,/continue-on-error|\|\| true/);
   assert.match(jobs.source_validation,/timeout-minutes: 45\n/);
-  for (const body of Object.values(jobs)) {
-    assert.match(body, /runs-on: \[self-hosted, "asi-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}-\$\{\{ github\.job \}\}"\]/);
-    assert.doesNotMatch(body, /linux, x64, asi-vps-onecom/);
-  }
+  assert.match(jobs.source_validation, /name: source_validation\n    runs-on: asi-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}-source_validation\n/);
+  assert.match(jobs.validate, /name: validate\n/);
+  assert.match(jobs.validate, /runs-on: asi-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}-validate\n/);
+  assert.match(jobs['channel-manager-recovery-postgres'], /name: channel-manager-recovery-postgres\n    runs-on: asi-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}-channel-manager-recovery-postgres\n/);
+  assert.doesNotMatch(workflow, /github\.job/);
+  assert.doesNotMatch(workflow, /runs-on:.*self-hosted/);
   assert.match(jobs.source_validation,/timeout --signal=TERM --kill-after=30s 3300/);
 });
 

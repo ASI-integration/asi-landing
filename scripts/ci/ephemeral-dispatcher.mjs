@@ -85,9 +85,9 @@ function hasCommonCapture(labels) {
 
 function jobRoute(run, job) {
   const names = labelNames(job?.labels);
-  if (COMMON_CAPTURE_LABELS.some(label => names.has(label))) return null;
+  if (names.has('self-hosted') || COMMON_CAPTURE_LABELS.some(label => names.has(label))) return null;
   const route = routeLabel(run.id, run.runAttempt, job?.name);
-  if (!route || names.size !== 2 || !names.has('self-hosted') || !names.has(route)) return null;
+  if (!route || names.size !== 1 || !names.has(route)) return null;
   return route;
 }
 
@@ -226,9 +226,9 @@ export function authorize(binding, requestedJobId) {
     return deny('UNAUTHORIZED_JOB');
   const route = routeLabel(binding.runId, binding.runAttempt, binding.jobName);
   const names = labelNames(binding.labels);
-  if (!route || binding.routeLabel !== route || COMMON_CAPTURE_LABELS.some(label => names.has(label)))
+  if (!route || binding.routeLabel !== route || names.has('self-hosted') || COMMON_CAPTURE_LABELS.some(label => names.has(label)))
     return deny('UNAUTHORIZED_JOB');
-  if (!Number.isSafeInteger(binding.workflowId) || names.size !== 2 || !names.has('self-hosted') || !names.has(route))
+  if (!Number.isSafeInteger(binding.workflowId) || names.size !== 1 || !names.has(route))
     return deny('UNAUTHORIZED_JOB');
   if (binding.event === 'pull_request' && binding.admission !== 'owner-comment') return deny('UNAUTHORIZED_JOB');
   return Object.freeze({action:'allow', reason:'AUTHORIZED_JOB', boot:false, retry:false, jobId});
@@ -389,7 +389,7 @@ if (entry.endsWith('/ephemeral-dispatcher.mjs')) {
       jobName:selected.job.name, routeLabel:selected.job.routeLabel, prNumber:selectedRun?.prNumber ?? null,
       workflowId:selected.job.workflowId, workflowFile:selected.job.workflowFile, headSha:selected.job.headSha,
       event:selected.job.event, admission:selectedRun?.admission,
-      labels:['self-hosted', selected.job.routeLabel],
+      labels:[selected.job.routeLabel],
     }} : selected);
     process.exit(0);
   }

@@ -67,7 +67,7 @@ case "$MODE" in
     while IFS= read -r path; do
       [[ -n "$path" ]] || continue
       case "$path" in
-        "$ASI_WORK_DIR"/*.qcow2|"$ASI_WORK_DIR"/*/*.qcow2|"$ASI_WORK_DIR"/*.iso|"$ASI_WORK_DIR"/*/*.iso)
+        "$ASI_WORK_DIR"/*.qcow2|"$ASI_WORK_DIR"/*/*.qcow2|"$ASI_WORK_DIR"/*/*/*.qcow2|"$ASI_WORK_DIR"/*.iso|"$ASI_WORK_DIR"/*/*.iso|"$ASI_WORK_DIR"/*/*/*.iso)
           rm -f -- "$path"
           ;;
         *)

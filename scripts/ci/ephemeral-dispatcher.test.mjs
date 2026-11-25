@@ -14,7 +14,7 @@ const labels = ['self-hosted', 'linux', 'x64', 'asi-vps-onecom'];
 const gold = {symlink:false, uid:0, mode:'0444', virtualBytes:GOLD_BYTES};
 const job = (id, over = {}, runId = 10, attempt = 1) => {
   const name = over.name || 'source_validation';
-  return {id, name, status:'queued', conclusion:null, labels:['self-hosted', `asi-${runId}-${attempt}-${name}`], ...over};
+  return {id, name, status:'queued', conclusion:null, labels:[`asi-${runId}-${attempt}-${name}`], ...over};
 };
 const admitted = (over = {}) => {
   const id = over.id ?? 10;
@@ -104,7 +104,7 @@ test('read-only github poll checks repo, workflow, head, owner, labels and job i
   assert.equal(authorize({
     repository:'ASI-integration/asi-landing', jobId:7, runId:40, runAttempt:1, jobName:'source_validation',
     routeLabel:'asi-40-1-source_validation', workflowId:101, headSha:sha,
-    event:'pull_request', admission:'owner-comment', labels:['self-hosted', 'asi-40-1-source_validation'],
+    event:'pull_request', admission:'owner-comment', labels:['asi-40-1-source_validation'],
   }, 11).reason, 'UNAUTHORIZED_JOB');
   const blocked = pollQueue({get(path) {
     if (path.endsWith('/runners?per_page=100')) return {total_count:1, runners:[{ephemeral:false, labels}]};
