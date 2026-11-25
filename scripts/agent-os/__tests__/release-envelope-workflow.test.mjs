@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 
 const workflow=readFileSync(new URL('../../../.github/workflows/pr-validation.yml',import.meta.url),'utf8');
 const jobs=Object.fromEntries([...workflow.split('\njobs:\n')[1].matchAll(/^  ([a-z_-]+):\n([\s\S]*?)(?=^  [a-z_-]+:\n|$(?![\s\S]))/gm)]
@@ -42,4 +43,11 @@ test('trusted boundary executes protected base only and retains independent v0 a
   assert.match(trusted,/ref: \$\{\{ github.event.pull_request.base.sha \}\}/);
   assert.match(trusted,/run: node scripts\/agent-os\/check-demo-release.mjs --ci/);
   assert.doesNotMatch(trusted,/continue-on-error|readAndAssessProtectedGateProposal/);
+});
+
+test('reviewer no-spend negatives stay in the offline suite',()=>{
+  const root=fileURLToPath(new URL('../../..',import.meta.url));
+  const result=spawnSync(process.execPath,['--test','scripts/agent-os/__tests__/reviewer-permit.test.mjs'],
+    {cwd:root,encoding:'utf8',timeout:60000});
+  assert.equal(result.status,0,(result.stdout||'')+(result.stderr||''));
 });
