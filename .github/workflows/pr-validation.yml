@@ -23,7 +23,9 @@ permissions:
 jobs:
   source_validation:
     runs-on: [self-hosted, linux, x64, asi-vps-onecom]
-    timeout-minutes: 30
+    # Job-guest cap is KVM launcher `timeout --signal=TERM --kill-after=30s 3300`
+    # (55m before TERM). 45m leaves 10m for boot, registration, and shutdown.
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -475,7 +477,7 @@ jobs:
         with:
           node-version: 20
       - name: Validate demo release milestones and PR scope
-        if: ${{ !cancelled() }}
+        if: ${{ success() }}
         timeout-minutes: 5
         env:
           GITHUB_TOKEN: ${{ github.token }}

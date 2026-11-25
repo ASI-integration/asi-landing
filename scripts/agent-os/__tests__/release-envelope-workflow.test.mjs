@@ -16,6 +16,18 @@ test('required validate remains aggregate admission, never a source-only green c
   assert.equal((jobs.validate.match(/node scripts\/agent-os\/check-demo-release.mjs --ci/g)||[]).length,1);
   assert.doesNotMatch(jobs.source_validation,/check-demo-release.mjs --ci/);
   assert.doesNotMatch(jobs.validate,/continue-on-error|\|\| true/);
+  assert.match(jobs.source_validation,/timeout-minutes: 45\n/);
+  assert.match(jobs.source_validation,/timeout --signal=TERM --kill-after=30s 3300/);
+});
+
+test('v0 scope check runs only after source success and checkout',()=>{
+  const marker='- name: Validate demo release milestones and PR scope\n';
+  const step=jobs.validate.split(marker)[1];
+  assert.ok(step);
+  assert.match(step,/if: \$\{\{ success\(\) \}\}/);
+  assert.doesNotMatch(step.split('\n      - name:')[0],/!cancelled\(\)/);
+  assert.match(jobs.validate,/if: \$\{\{ !cancelled\(\) \}\}/);
+  assert.match(jobs.validate,/test "\$SOURCE_RESULT" = success/);
 });
 
 test('aggregate dependency guard rejects failure, cancellation, skipped and unknown results',()=>{
