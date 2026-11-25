@@ -67,8 +67,13 @@ test('read-only github poll checks repo, workflow, head, owner, labels and job i
       id:51, workflow_id:101, event:'pull_request', head_sha:sha,
       head_repository:{full_name:'ASI-integration/asi-landing'}, pull_requests:[{number:688}],
     }]},
+    'repos/ASI-integration/asi-landing/actions/runs?status=in_progress&per_page=20': {workflow_runs:[{
+      id:40, workflow_id:101, event:'pull_request', head_sha:sha,
+      head_repository:{full_name:'ASI-integration/asi-landing'}, pull_requests:[{number:687}],
+    }]},
     'repos/ASI-integration/asi-landing/actions/runners?per_page=100': {total_count:1, runners:[{ephemeral:false, labels:['self-hosted','linux','x64']}]},
     'repos/ASI-integration/asi-landing/commits/main': {sha:'b'.repeat(40)},
+    'repos/ASI-integration/asi-landing/actions/runs/40/jobs?per_page=100': {jobs:[job(7)]},
     'repos/ASI-integration/asi-landing/actions/runs/50/jobs?per_page=100': {jobs:[job(9)]},
     'repos/ASI-integration/asi-landing/actions/runs/51/jobs?per_page=100': {jobs:[job(11)]},
     'repos/ASI-integration/asi-landing/pulls/687': {head:{sha}},
@@ -82,7 +87,8 @@ test('read-only github poll checks repo, workflow, head, owner, labels and job i
   const calls = [];
   const polled = pollQueue({get(path) { calls.push(path); if (!(path in pages)) throw new Error(path); return pages[path]; }});
   const selected = selectJob(polled.runs);
-  assert.equal(selected.job.jobId, 9);
+  assert.equal(selected.job.jobId, 7);
+  assert.equal(calls.includes('repos/ASI-integration/asi-landing/actions/runs?status=in_progress&per_page=20'), true);
   assert.equal(calls.some(path => path.includes('registration-token')), false);
   assert.equal(authorize(polled.runs && {
     repository:'ASI-integration/asi-landing', jobId:9, workflowId:101, headSha:sha,

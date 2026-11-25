@@ -35,6 +35,35 @@ case "$MODE" in
     rc=$?
     set -e
     [[ "$rc" -eq 0 ]] || { echo 'BLOCKED: RECOVERY_PATHS' >&2; exit 2; }
+    pids=()
+    if command -v pgrep >/dev/null 2>&1; then
+      while read -r pid cmd; do
+        [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 1 ]] || continue
+        case "$cmd" in
+          pgrep*) continue ;;
+        esac
+        case "$cmd" in
+          *qemu-system*"$ASI_WORK_DIR"*) pids+=("$pid") ;;
+        esac
+      done < <(pgrep -af qemu-system || true)
+    fi
+    if ((${#pids[@]})); then
+      for pid in "${pids[@]}"; do kill -TERM "$pid" 2>/dev/null || true; done
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        alive=0
+        for pid in "${pids[@]}"; do
+          if kill -0 "$pid" 2>/dev/null; then alive=1; fi
+        done
+        [[ "$alive" -eq 0 ]] && break
+        sleep 0.2
+      done
+      for pid in "${pids[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+          echo 'BLOCKED: GUEST_STILL_RUNNING' >&2
+          exit 2
+        fi
+      done
+    fi
     while IFS= read -r path; do
       [[ -n "$path" ]] || continue
       case "$path" in
@@ -47,14 +76,6 @@ case "$MODE" in
           ;;
       esac
     done <<< "$list"
-    if command -v pgrep >/dev/null 2>&1; then
-      while read -r pid cmd; do
-        [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 1 ]] || continue
-        case "$cmd" in
-          *qemu-system*"$ASI_WORK_DIR"*) kill -TERM "$pid" 2>/dev/null || true ;;
-        esac
-      done < <(pgrep -af qemu-system-x86_64 || true)
-    fi
     echo 'RECOVER_OK'
     ;;
   serve)
@@ -78,14 +99,15 @@ case "$MODE" in
     fi
     [[ -n "${ASI_LOCK_FILE:-}" && -n "${ASI_STATE_DIR:-}" && -x "$ADAPTER" ]] || { echo 'BLOCKED: GOLD_LAUNCHER_ABSENT' >&2; exit 2; }
     mkdir -p -- "$ASI_STATE_DIR"
-    binding="$ASI_STATE_DIR/binding.json"
-    printf '%s' "$decision" | "$NODE" -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const p=JSON.parse(s); if(!p.binding||p.binding.jobId!==p.job.jobId) process.exit(2); process.stdout.write(JSON.stringify(p.binding))})' > "$binding"
-    chmod 0600 "$binding"
     exec 9>>"$ASI_LOCK_FILE"
     if ! flock -n 9; then
       echo 'BLOCKED: SLOT_BUSY' >&2
       exit 2
     fi
+    binding="$ASI_STATE_DIR/binding.json"
+    printf '%s' "$decision" | "$NODE" -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const p=JSON.parse(s); if(!p.binding||p.binding.jobId!==p.job.jobId) process.exit(2); process.stdout.write(JSON.stringify(p.binding))})' > "$binding"
+    chmod 0600 "$binding"
+    export ASI_LOCK_FD=9
     set +e
     timeout --signal=TERM --kill-after="${ASI_KILL_AFTER_SEC:-30}" "${ASI_GUEST_TIMEOUT_SEC:-3300}" \
       "$ADAPTER" run-one "$job" "$binding"

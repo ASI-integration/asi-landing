@@ -16,11 +16,12 @@ NODE=${ASI_NODE:-node}
 "$NODE" "$MOD" authorize "$JOB" "$BINDING"
 LAUNCHER=${ASI_GOLD_LAUNCHER:-}
 [[ -n "$LAUNCHER" && -x "$LAUNCHER" && ! -L "$LAUNCHER" ]] || { echo 'BLOCKED: GOLD_LAUNCHER_ABSENT' >&2; exit 2; }
-grep -q 'ASI_AUTHORIZED_JOB_ID' "$LAUNCHER" || { echo 'BLOCKED: LAUNCHER_CONTRACT_MISMATCH' >&2; exit 2; }
-[[ -n "${ASI_LOCK_FILE:-}" ]] || { echo 'BLOCKED: FLOCK_REQUIRED' >&2; exit 2; }
-exec 8>>"$ASI_LOCK_FILE"
-flock -n 8 || { echo 'BLOCKED: SLOT_BUSY' >&2; exit 2; }
+fd=${ASI_LOCK_FD:-}
+[[ "$fd" =~ ^[0-9]+$ && -e "/proc/self/fd/$fd" ]] || { echo 'BLOCKED: LOCK_NOT_HELD' >&2; exit 2; }
+held=$(readlink "/proc/self/fd/$fd" || true)
+[[ "$(readlink -f "$held")" == "$(readlink -f "$ASI_LOCK_FILE")" ]] || { echo 'BLOCKED: LOCK_NOT_HELD' >&2; exit 2; }
 export ASI_GOLD_MODE=run-one
 export ASI_AUTHORIZED_JOB_ID="$JOB"
+export ASI_BINDING_FILE="$BINDING"
 unset ASI_EXTRA_JOB_ID || true
 exec "$LAUNCHER" run-one

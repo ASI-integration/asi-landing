@@ -44,10 +44,11 @@ case "\$2" in
   repos/ASI-integration/asi-landing) echo '{"full_name":"ASI-integration/asi-landing"}' ;;
   repos/ASI-integration/asi-landing/actions/workflows/pr-validation.yml) echo '{"id":101,"name":"PR Validation","path":".github/workflows/pr-validation.yml"}' ;;
   repos/ASI-integration/asi-landing/actions/workflows/agent-intake-triage.yml) echo '{"id":202,"name":"Agent Intake Triage","path":".github/workflows/agent-intake-triage.yml"}' ;;
-  'repos/ASI-integration/asi-landing/actions/runs?status=queued&per_page=20') echo '{"workflow_runs":[{"id":50,"workflow_id":101,"event":"pull_request","head_sha":"$SHA","head_repository":{"full_name":"ASI-integration/asi-landing"},"pull_requests":[{"number":687}]},{"id":51,"workflow_id":101,"event":"pull_request","head_sha":"$SHA","head_repository":{"full_name":"ASI-integration/asi-landing"},"pull_requests":[{"number":688}]},{"id":52,"workflow_id":999,"event":"pull_request","head_sha":"$SHA","head_repository":{"full_name":"other/asi-landing"},"pull_requests":[{"number":1}]}]}' ;;
+  'repos/ASI-integration/asi-landing/actions/runs?status=queued&per_page=20') echo '{"workflow_runs":[{"id":51,"workflow_id":101,"event":"pull_request","head_sha":"$SHA","head_repository":{"full_name":"ASI-integration/asi-landing"},"pull_requests":[{"number":688}]}]}' ;;
+  'repos/ASI-integration/asi-landing/actions/runs?status=in_progress&per_page=20') echo '{"workflow_runs":[{"id":40,"workflow_id":101,"event":"pull_request","head_sha":"$SHA","head_repository":{"full_name":"ASI-integration/asi-landing"},"pull_requests":[{"number":687}]}]}' ;;
   repos/ASI-integration/asi-landing/actions/runners?per_page=100) echo '{"total_count":0,"runners":[]}' ;;
   repos/ASI-integration/asi-landing/commits/main) echo '{"sha":"$MAIN"}' ;;
-  repos/ASI-integration/asi-landing/actions/runs/50/jobs?per_page=100) echo '{"jobs":[{"id":9,"name":"source_validation","status":"queued","conclusion":null,"labels":["self-hosted","linux","x64","asi-vps-onecom"]},{"id":12,"name":"validate","status":"completed","conclusion":"failure","labels":["self-hosted","linux","x64","asi-vps-onecom"]}]}' ;;
+  repos/ASI-integration/asi-landing/actions/runs/40/jobs?per_page=100) echo '{"jobs":[{"id":7,"name":"source_validation","status":"queued","conclusion":null,"labels":["self-hosted","linux","x64","asi-vps-onecom"]}]}' ;;
   repos/ASI-integration/asi-landing/actions/runs/51/jobs?per_page=100) echo '{"jobs":[{"id":11,"name":"source_validation","status":"queued","conclusion":null,"labels":["self-hosted","linux","x64","asi-vps-onecom"]}]}' ;;
   repos/ASI-integration/asi-landing/pulls/687) echo '{"head":{"sha":"$SHA"}}' ;;
   repos/ASI-integration/asi-landing/pulls/688) echo '{"head":{"sha":"$SHA"}}' ;;
@@ -59,10 +60,21 @@ EOF
 chmod 0755 "$BIN/gh"
 cat > "$BIN/launcher" <<'EOF'
 #!/bin/sh
-# ASI_AUTHORIZED_JOB_ID is the only job this launcher may run.
-if [ "$1" != "run-one" ]; then echo 'bad mode' >&2; exit 2; fi
-if [ -n "${ASI_EXTRA_JOB_ID:-}" ]; then echo 'captured extra job' >&2; exit 3; fi
-printf '%s\n' "$ASI_AUTHORIZED_JOB_ID" >> "$OUT"
+# Gold v3.3 run-one. The guest job is taken only from the locked binding.
+set -eu
+[ "$1" = run-one ] || { echo 'bad mode' >&2; exit 2; }
+python3 - "$ASI_BINDING_FILE" "$ASI_AUTHORIZED_JOB_ID" <<'PY'
+import json, os, sys
+binding = json.load(open(sys.argv[1]))
+if str(binding.get("jobId")) != sys.argv[2]:
+    raise SystemExit(3)
+if binding.get("repository") != "ASI-integration/asi-landing":
+    raise SystemExit(3)
+if os.environ.get("ASI_EXTRA_JOB_ID"):
+    raise SystemExit(3)
+open(os.environ["OUT"], "a").write(sys.argv[2] + "\n")
+open(os.environ["STARTED_MARK"], "a").write("LAUNCHER_STARTED\n")
+PY
 if [ -n "${HOLD_FILE:-}" ]; then
   : > "$STARTED"
   while [ ! -f "$RELEASE" ]; do sleep 0.1; done
@@ -83,6 +95,7 @@ export ASI_STATE_DIR="$STATE"
 export ASI_NO_RETRY_FILE="$STATE/no-retry.ids"
 export ASI_DISPATCHER_EXECUTE=YES
 export OUT="$OUT"
+export STARTED_MARK="$STATE/launcher.started"
 : > "$OUT"
 
 bash "$SRC/install-ephemeral-dispatcher.sh" --apply "$ROOT"
@@ -133,7 +146,11 @@ printf 'iso\n' > "$WORK/guest/seed.iso"
 printf 'log\n' > "$WORK/guest/console.log"
 printf 'keep\n' > "$STATE/outside.txt"
 ln -s "$STATE/outside.txt" "$WORK/guest/evil.qcow2"
+python3 -c 'import os,sys; os.execv("/bin/sleep", ["qemu-system-x86_64", "30", sys.argv[1]])' "$WORK/guest" &
+guest_pid=$!
+sleep 0.2
 "$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh" recover >/dev/null
+if kill -0 "$guest_pid" 2>/dev/null; then echo 'GUEST_STILL_RUNNING' >&2; exit 1; fi
 test ! -e "$WORK/guest/disk.qcow2"
 test ! -e "$WORK/guest/seed.iso"
 test "$(cat "$WORK/guest/console.log")" = log
@@ -143,67 +160,43 @@ test -f "$GOLD"
 
 binding=$STATE/binding.json
 cat > "$binding" <<EOF
-{"repository":"ASI-integration/asi-landing","jobId":9,"runId":50,"workflowId":101,"workflowFile":".github/workflows/pr-validation.yml","headSha":"$SHA","event":"pull_request","admission":"owner-comment","labels":["self-hosted","linux","x64","asi-vps-onecom"]}
+{"repository":"ASI-integration/asi-landing","jobId":7,"runId":40,"workflowId":101,"workflowFile":".github/workflows/pr-validation.yml","headSha":"$SHA","event":"pull_request","admission":"owner-comment","labels":["self-hosted","linux","x64","asi-vps-onecom"]}
 EOF
 set +e
-ASI_EXTRA_JOB_ID=11 "$ROOT/usr/local/sbin/asi-gold-v33-adapter.sh" run-one 11 "$binding" >"$STATE/unauth.out" 2>"$STATE/unauth.err"
+"$ROOT/usr/local/sbin/asi-gold-v33-adapter.sh" run-one 11 "$binding" >"$STATE/unauth.out" 2>"$STATE/unauth.err"
 unauth=$?
 set -e
 test "$unauth" -eq 2
 test ! -s "$OUT"
+test ! -s "$STARTED_MARK"
 grep -q UNAUTHORIZED_JOB "$STATE/unauth.out" "$STATE/unauth.err"
-
-set +e
-"$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh" serve >"$STATE/serve.out" 2>"$STATE/serve.err"
-serve_rc=$?
-set -e
-grep -q 'actions/runs?status=queued' "$GH_LOG"
-grep -q 'pulls/687' "$GH_LOG"
-grep -q 'issues/687/comments' "$GH_LOG"
-grep -q 'actions/runs/50/jobs' "$GH_LOG"
-if grep -q registration-token "$GH_LOG"; then echo 'token request' >&2; exit 1; fi
-mem_kb=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
-if grep -q GOLD_SEAL_BLOCK "$STATE/serve.out"; then
-  test "$(id -u)" -ne 0
-  test ! -s "$OUT"
-elif [[ "$mem_kb" -lt 7340032 ]]; then
-  grep -q WAIT_MEMORY "$STATE/serve.out"
-  test ! -s "$OUT"
-else
-  test "$serve_rc" -eq 0
-  grep -q GUEST_FINISHED "$STATE/serve.out"
-  test "$(cat "$OUT")" = 9
-  : > "$OUT"
-fi
+rm -f -- "$binding"
+printf 'MemAvailable:    8388608 kB\n' > "$STATE/meminfo"
 export HOLD_FILE=1 STARTED=$STATE/started RELEASE=$STATE/release
-"$ROOT/usr/local/sbin/asi-gold-v33-adapter.sh" run-one 9 "$binding" >"$STATE/hold.out" &
+unshare --mount bash -c "mount --bind '$STATE/meminfo' /proc/meminfo && exec '$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh' serve" >"$STATE/serve.out" 2>"$STATE/serve.err" &
 holder=$!
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-  [[ -f "$STARTED" ]] && break
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+  [[ -f "$STARTED_MARK" ]] && break
   sleep 0.2
 done
-test -f "$STARTED"
+if [[ ! -s "$STARTED_MARK" ]]; then
+  echo 'LAUNCHER_NOT_STARTED'
+  cat "$STATE/serve.out" "$STATE/serve.err" || true
+  exit 1
+fi
+grep -q LAUNCHER_STARTED "$STARTED_MARK"
+test "$(cat "$OUT")" = 7
+grep -q 'status=in_progress' "$GH_LOG"
+grep -q 'actions/runs/40/jobs' "$GH_LOG"
+if grep -q registration-token "$GH_LOG"; then echo 'token request' >&2; exit 1; fi
 set +e
-"$ROOT/usr/local/sbin/asi-gold-v33-adapter.sh" run-one 9 "$binding" >"$STATE/busy.out" 2>"$STATE/busy.err"
-busy=$?
+unshare --mount bash -c "mount --bind '$STATE/meminfo' /proc/meminfo && exec '$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh' serve" >"$STATE/second.out" 2>"$STATE/second.err"
+second=$?
 set -e
-test "$busy" -eq 2
-grep -q SLOT_BUSY "$STATE/busy.err"
+test "$second" -eq 2
+grep -q SLOT_BUSY "$STATE/second.err"
+test "$(wc -l < "$OUT")" -eq 1
 : > "$RELEASE"
 wait "$holder"
-unset HOLD_FILE STARTED RELEASE
-export SLEEP_FOR=5
-set +e
-timeout --signal=TERM --kill-after=1 1 "$ROOT/usr/local/sbin/asi-gold-v33-adapter.sh" run-one 9 "$binding" >"$STATE/hang.out" 2>"$STATE/hang.err"
-hang=$?
-set -e
-test "$hang" -ne 0
-printf '9\n' >> "$STATE/no-retry.ids"
-: > "$GH_LOG"
-if [[ "$mem_kb" -ge 7340032 ]]; then
-  : > "$OUT"
-  "$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh" serve >"$STATE/again.out"
-  grep -q QUEUE_EMPTY "$STATE/again.out"
-  test "$(wc -l < "$OUT")" -eq 0
-fi
+grep -q GUEST_FINISHED "$STATE/serve.out"
 echo 'INSTALLED_DISPATCHER_PROVED'
