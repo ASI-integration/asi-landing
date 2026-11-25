@@ -1,10 +1,14 @@
 /**
- * One-time admission for a paid AI reviewer call.
- * This module never reads CLOUDRU_API_KEY and never calls a model provider.
- * LOCAL_OK is not permission to spend. Only admit:true / code ADMIT is.
+ * Paid-reviewer admission.
+ * The owner fingerprint is a source constant. It is never taken from the key
+ * that is about to be checked. A signed budget snapshot is not spend authority.
+ * GitHub issue comments are not a ledger. No model client lives here.
+ * P1 SQLite escrow on one.com is not wired into this GitHub-hosted gate, so
+ * decideSpend refuses every call.
  */
 import {createHash, createPublicKey, verify} from 'node:crypto';
 
+export const OWNER_TRUST_ROOT = '179cf786e1448ff1a3fccbe426d59aa3a3482050d98f5a8c82fd2f6a8a0b6a4d';
 export const PERMIT_SCHEMA = 'asi.reviewer-permit.v1';
 export const BUDGET_SCHEMA = 'asi.reviewer-budget.v1';
 const REPO = 'ASI-integration/asi-landing';
@@ -47,7 +51,8 @@ function canonical(value, fields) {
 
 export function reviewerKeyFingerprint(pem) {
   if (typeof pem !== 'string' || pem.length < 80 || pem.length > 10000) return null;
-  const key = createPublicKey(pem);
+  let key;
+  try { key = createPublicKey(pem); } catch { return null; }
   if (key.asymmetricKeyType !== 'ed25519') return null;
   return createHash('sha256').update(key.export({type:'spki', format:'der'})).digest('hex');
 }
@@ -58,21 +63,32 @@ function openEnvelope(envelope, pem) {
       !/^[A-Za-z0-9+/]{86}==$/.test(envelope.signature)) return null;
   const fingerprint = reviewerKeyFingerprint(pem);
   if (!fingerprint) return null;
+  let key;
+  try { key = createPublicKey(pem); } catch { return null; }
   const signature = Buffer.from(envelope.signature, 'base64');
-  if (signature.length !== 64 || !verify(null, Buffer.from(envelope.payload, 'utf8'), createPublicKey(pem), signature)) return null;
+  if (signature.length !== 64 || !verify(null, Buffer.from(envelope.payload, 'utf8'), key, signature)) return null;
   let parsed;
   try { parsed = JSON.parse(envelope.payload); } catch { return null; }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || JSON.stringify(parsed) !== envelope.payload) return null;
   return {parsed, digest:createHash('sha256').update(envelope.payload, 'utf8').digest('hex'), fingerprint};
 }
 
-export function reviewLocalPermit({permit, budget, ownerPublicKey, expected, now} = {}) {
+function reviewPermit(input, enforceOwnerRoot) {
+  const {permit, budget, ownerPublicKey, expected, now} = input || {};
   if (!Number.isSafeInteger(now) || now < 0) return deny('BUDGET_UNVERIFIED', 'CLOCK');
   const pinned = plain(expected, ['headSha', 'ownerKeySha256']);
   if (!pinned || !SHA40.test(pinned.headSha) || !SHA64.test(pinned.ownerKeySha256))
     return deny('NO_SIGNED_REVIEWER_PERMIT', 'CONTEXT');
+  const fingerprint = reviewerKeyFingerprint(ownerPublicKey);
+  if (!fingerprint) return deny('NO_SIGNED_REVIEWER_PERMIT', 'TRUST_ROOT');
+  if (enforceOwnerRoot) {
+    if (pinned.ownerKeySha256 !== OWNER_TRUST_ROOT || fingerprint !== OWNER_TRUST_ROOT)
+      return deny('NO_SIGNED_REVIEWER_PERMIT', 'TRUST_ROOT');
+  } else if (pinned.ownerKeySha256 !== fingerprint) {
+    return deny('NO_SIGNED_REVIEWER_PERMIT', 'TRUST_ROOT');
+  }
   const openedPermit = openEnvelope(permit, ownerPublicKey);
-  if (!openedPermit || openedPermit.fingerprint !== pinned.ownerKeySha256)
+  if (!openedPermit || openedPermit.fingerprint !== fingerprint)
     return deny('NO_SIGNED_REVIEWER_PERMIT', 'PERMIT_SIGNATURE');
   const body = plain(openedPermit.parsed, permitFields);
   if (!body || canonical(body, permitFields) !== permit.payload)
@@ -88,7 +104,7 @@ export function reviewLocalPermit({permit, budget, ownerPublicKey, expected, now
   if (!Number.isSafeInteger(body.capRub) || body.capRub <= 0 || body.capRub > MAX_RUB)
     return deny('NO_SIGNED_REVIEWER_PERMIT', 'PERMIT_CAP');
   const openedBudget = openEnvelope(budget, ownerPublicKey);
-  if (!openedBudget || openedBudget.fingerprint !== pinned.ownerKeySha256)
+  if (!openedBudget || openedBudget.fingerprint !== fingerprint)
     return deny('BUDGET_UNVERIFIED', 'BUDGET_SIGNATURE');
   const money = plain(openedBudget.parsed, budgetFields);
   if (!money || canonical(money, budgetFields) !== budget.payload)
@@ -115,96 +131,24 @@ export function reviewLocalPermit({permit, budget, ownerPublicKey, expected, now
   });
 }
 
-function ledgerOf(value) {
-  const ledger = plain(value, ['trusted', 'digests']);
-  if (!ledger || ledger.trusted !== true) return null;
-  const digests = digestList(ledger.digests);
-  if (!digests) return null;
-  return {trusted:true, digests};
+export function reviewLocalPermit(input = {}) {
+  return reviewPermit(input, true);
 }
 
-function liveOf(value) {
-  const live = plain(value, ['verified', 'taskId', 'hold']);
-  if (!live || live.verified !== true || live.hold !== false && live.hold !== true || !TASK.test(live.taskId)) return null;
-  return live;
+/** Constraint checks for fixtures. This does not establish the owner root and cannot spend. */
+export function inspectPermitConstraints(input = {}) {
+  return reviewPermit(input, false);
+}
+
+export function decideSpend(local) {
+  if (local && local.ok === false && local.admit === false && typeof local.code === 'string' && local.code !== 'ADMIT')
+    return local;
+  return deny('NO_SPEND', 'ESCROW_RESERVATION_UNAVAILABLE');
 }
 
 export async function admitReviewerCall(input = {}) {
-  if (input && Object.hasOwn(input, 'cloudRuApiKey')) return deny('NO_SIGNED_REVIEWER_PERMIT', 'KEY_PRESENT');
+  if (input && (Object.hasOwn(input, 'cloudRuApiKey') || Object.hasOwn(input, 'modelCall')))
+    return deny('NO_SPEND', 'KEY_PRESENT');
   const local = reviewLocalPermit(input);
-  if (!local.ok) return local;
-  const live = liveOf(input.liveTask);
-  if (!live) return deny('BUDGET_UNVERIFIED', 'LIVE_TASK_UNVERIFIED');
-  if (live.taskId !== local.taskId) return deny('BUDGET_UNVERIFIED', 'LIVE_TASK_MISMATCH');
-  if (live.hold === true) return deny('BUDGET_HOLD', 'LIVE_HOLD');
-  const ledger = ledgerOf(input.replayLedger);
-  if (!ledger) return deny('NO_SIGNED_REVIEWER_PERMIT', 'REPLAY_UNVERIFIED');
-  if (ledger.digests.includes(local.digest)) return deny('NO_SIGNED_REVIEWER_PERMIT', 'PERMIT_REPLAY');
-  if (typeof input.claim !== 'function') return deny('NO_SIGNED_REVIEWER_PERMIT', 'CLAIM_UNVERIFIED');
-  let claimed = false;
-  try { claimed = await input.claim(local.digest); } catch { claimed = false; }
-  if (claimed !== true) return deny('NO_SIGNED_REVIEWER_PERMIT', 'CLAIM_FAILED');
-  return Object.freeze({admit:true, code:'ADMIT', reason:'ADMIT', digest:local.digest, taskId:local.taskId});
-}
-
-export async function observeReviewerTask({taskId, token, fetchImpl} = {}) {
-  const fail = () => ({verified:false, taskId:null, hold:true, digests:[]});
-  if (!TASK.test(String(taskId || '')) || typeof token !== 'string' || token.length < 8 ||
-      token.length > 4096 || typeof fetchImpl !== 'function') return fail();
-  const headers = {
-    Authorization:`Bearer ${token}`,
-    Accept:'application/vnd.github+json',
-    'X-GitHub-Api-Version':'2022-11-28',
-    'User-Agent':'asi-reviewer-permit',
-  };
-  const base = `https://api.github.com/repos/${REPO}/issues/${taskId}`;
-  let issueRes;
-  try { issueRes = await fetchImpl(base, {headers, signal:AbortSignal.timeout(20000)}); }
-  catch { return fail(); }
-  if (!issueRes?.ok || typeof issueRes.json !== 'function') return fail();
-  const issue = await issueRes.json();
-  if (!issue || Number(issue.number) !== Number(taskId)) return fail();
-  const labels = Array.isArray(issue.labels) ? issue.labels : [];
-  const names = labels.map(label => typeof label === 'string' ? label : label?.name).filter(name => typeof name === 'string');
-  const hold = issue.state !== 'open' || names.some(name => name.toUpperCase() === 'HOLD') ||
-    /(^|\s)HOLD(\s|$)/.test(String(issue.title || ''));
-  const digests = [];
-  for (let page = 1; page <= 5; page++) {
-    let commentsRes;
-    try {
-      commentsRes = await fetchImpl(`${base}/comments?per_page=100&page=${page}`, {headers, signal:AbortSignal.timeout(20000)});
-    } catch { return fail(); }
-    if (!commentsRes?.ok || typeof commentsRes.json !== 'function') return fail();
-    const comments = await commentsRes.json();
-    if (!Array.isArray(comments)) return fail();
-    for (const comment of comments) {
-      const match = typeof comment?.body === 'string' &&
-        comment.body.trim().match(/^ASI-REVIEWER-PERMIT-CONSUMED:([a-f0-9]{64})$/);
-      if (match) digests.push(match[1]);
-    }
-    if (comments.length < 100) return {verified:true, taskId:String(issue.number), hold, digests};
-  }
-  return fail();
-}
-
-export async function claimPermitDigest({taskId, digest, token, fetchImpl} = {}) {
-  if (!TASK.test(String(taskId || '')) || !SHA64.test(String(digest || '')) ||
-      typeof token !== 'string' || token.length < 8 || typeof fetchImpl !== 'function') return false;
-  const headers = {
-    Authorization:`Bearer ${token}`,
-    Accept:'application/vnd.github+json',
-    'Content-Type':'application/json',
-    'X-GitHub-Api-Version':'2022-11-28',
-    'User-Agent':'asi-reviewer-permit',
-  };
-  const body = `ASI-REVIEWER-PERMIT-CONSUMED:${digest}`;
-  let posted;
-  try {
-    posted = await fetchImpl(`https://api.github.com/repos/${REPO}/issues/${taskId}/comments`, {
-      method:'POST', headers, body:JSON.stringify({body}), signal:AbortSignal.timeout(20000),
-    });
-  } catch { return false; }
-  if (!posted?.ok) return false;
-  const seen = await observeReviewerTask({taskId, token, fetchImpl});
-  return seen.verified === true && seen.digests.filter(item => item === digest).length === 1;
+  return decideSpend(local);
 }

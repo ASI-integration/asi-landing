@@ -1,73 +1,36 @@
 /**
- * Workflow entry. Refuses before any model call.
- * --phase local: signature, exact HEAD, expiry, task, cap, signed budget. No network.
- * --phase commit: repeats local checks, then live HOLD/budget observation and one-time claim.
- * Neither phase reads a successful path that contacts Cloud.ru.
+ * Workflow entry for the no-spend reviewer gate.
+ * The expected owner fingerprint is the source constant, never the fingerprint
+ * of ASI_REVIEWER_OWNER_PUBLIC_KEY. Exit 0 and ADMIT are unreachable.
+ * Issue comments are not read or written.
  */
-import {appendFileSync} from 'node:fs';
-import {createPublicKey} from 'node:crypto';
-import {admitReviewerCall, reviewLocalPermit, reviewerKeyFingerprint, observeReviewerTask, claimPermitDigest} from './reviewer-permit.mjs';
+import {OWNER_TRUST_ROOT, admitReviewerCall} from './reviewer-permit.mjs';
 
-const finish = (code, digest) => {
-  if (process.env.GITHUB_OUTPUT && code === 'LOCAL_OK' && digest) {
-    appendFileSync(process.env.GITHUB_OUTPUT, `code=LOCAL_OK\ndigest=${digest}\ntask=${process.env.ASI_REVIEWER_TASK_OUT || ''}\n`);
-  }
-  if (process.env.GITHUB_OUTPUT && code === 'ADMIT' && digest) {
-    appendFileSync(process.env.GITHUB_OUTPUT, `code=ADMIT\ndigest=${digest}\n`);
-  }
-  console.log(code);
-  process.exit(code === 'LOCAL_OK' || code === 'ADMIT' ? 0 : 2);
+const finish = code => {
+  const safe = code === 'ADMIT' || code === 'LOCAL_OK' ? 'NO_SPEND' : code;
+  console.log(safe);
+  process.exit(2);
 };
 
-if (Object.hasOwn(process.env, 'CLOUDRU_API_KEY')) finish('NO_SIGNED_REVIEWER_PERMIT');
+if (Object.hasOwn(process.env, 'CLOUDRU_API_KEY')) finish('NO_SPEND');
 
-const phase = process.argv.includes('--phase') ? process.argv[process.argv.indexOf('--phase') + 1] : '';
-if (phase !== 'local' && phase !== 'commit') finish('NO_SIGNED_REVIEWER_PERMIT');
-
-let permit;
-let budget;
-try {
-  permit = JSON.parse(process.env.ASI_REVIEWER_PERMIT || '');
-  budget = JSON.parse(process.env.ASI_REVIEWER_BUDGET || '');
-} catch {
-  finish('NO_SIGNED_REVIEWER_PERMIT');
+let permit = null;
+let budget = null;
+if (process.env.ASI_REVIEWER_PERMIT || process.env.ASI_REVIEWER_BUDGET) {
+  try {
+    permit = JSON.parse(process.env.ASI_REVIEWER_PERMIT || 'null');
+    budget = JSON.parse(process.env.ASI_REVIEWER_BUDGET || 'null');
+  } catch {
+    finish('NO_SIGNED_REVIEWER_PERMIT');
+  }
 }
 
-const ownerPublicKey = process.env.ASI_REVIEWER_OWNER_PUBLIC_KEY || '';
-const ownerKeySha256 = reviewerKeyFingerprint(ownerPublicKey);
-if (!ownerKeySha256) finish('NO_SIGNED_REVIEWER_PERMIT');
-try {
-  if (createPublicKey(ownerPublicKey).asymmetricKeyType !== 'ed25519') finish('NO_SIGNED_REVIEWER_PERMIT');
-} catch {
-  finish('NO_SIGNED_REVIEWER_PERMIT');
-}
-
-const expected = {headSha:process.env.HEAD_SHA || '', ownerKeySha256};
-const now = Number(process.env.ASI_REVIEWER_NOW_MS || Date.now());
-const local = reviewLocalPermit({permit, budget, ownerPublicKey, expected, now});
-if (!local.ok) finish(local.code);
-if (phase === 'commit' && process.env.EXPECTED_DIGEST !== local.digest) finish('NO_SIGNED_REVIEWER_PERMIT');
-if (phase === 'local') {
-  process.env.ASI_REVIEWER_TASK_OUT = local.taskId;
-  finish('LOCAL_OK', local.digest);
-}
-
-const token = process.env.BOT_TOKEN || '';
-let observed;
-try {
-  observed = await observeReviewerTask({taskId:local.taskId, token, fetchImpl:globalThis.fetch});
-} catch {
-  observed = {verified:false};
-}
 const decision = await admitReviewerCall({
-  permit, budget, ownerPublicKey, expected, now,
-  liveTask: observed.verified === true
-    ? {verified:true, taskId:observed.taskId, hold:observed.hold === true}
-    : {verified:false, taskId:local.taskId, hold:true},
-  replayLedger: observed.verified === true
-    ? {trusted:true, digests:[...observed.digests].sort()}
-    : {trusted:false, digests:[]},
-  claim: digest => claimPermitDigest({taskId:local.taskId, digest, token, fetchImpl:globalThis.fetch}),
+  permit,
+  budget,
+  ownerPublicKey: process.env.ASI_REVIEWER_OWNER_PUBLIC_KEY || '',
+  expected: {headSha: process.env.HEAD_SHA || '', ownerKeySha256: OWNER_TRUST_ROOT},
+  now: Number(process.env.ASI_REVIEWER_NOW_MS || Date.now()),
 });
-if (!decision.admit) finish(decision.code);
-finish('ADMIT', decision.digest);
+if (!decision || decision.admit === true || decision.code === 'ADMIT' || decision.code === 'LOCAL_OK') finish('NO_SPEND');
+finish(decision.code);
