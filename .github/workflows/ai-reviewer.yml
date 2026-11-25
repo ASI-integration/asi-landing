@@ -2,10 +2,16 @@ name: AI Reviewer Gate
 
 # Runs trusted workflow code from the protected default branch.
 # PR contents are read as untrusted data, never checked out/executed.
+# A paid Cloud.ru call exists only after a one-time signed permit and a live budget admit.
+# Missing, forged, expired, replayed, HOLD, or zero-cap evidence stops before that secret.
 on:
   pull_request_target:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ai-reviewer-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -35,15 +41,41 @@ jobs:
           git -c core.hooksPath=/dev/null fetch --no-tags origin "refs/pull/${PR_NUMBER}/head"
           git cat-file -e "${HEAD_SHA}^{commit}"
 
+      - name: Admit reviewer permit and budget
+        id: admit
+        timeout-minutes: 2
+        env:
+          ASI_REVIEWER_PERMIT: ${{ vars.ASI_REVIEWER_PERMIT }}
+          ASI_REVIEWER_BUDGET: ${{ vars.ASI_REVIEWER_BUDGET }}
+          ASI_REVIEWER_OWNER_PUBLIC_KEY: ${{ vars.ASI_REVIEWER_OWNER_PUBLIC_KEY }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/agent-os/reviewer-permit-cli.mjs --phase local
+
       - name: Generate GitHub App Token
         id: app-token
+        if: ${{ success() }}
         uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
         with:
           app-id: ${{ secrets.STRIGUNOV_APP_ID }}
           private-key: ${{ secrets.STRIGUNOV_APP_PRIVATE_KEY }}
 
-      - name: Run Adversarial Model Review & Submit Verdict
+      - name: Claim one-time reviewer permit
+        id: commit
+        if: ${{ success() }}
+        timeout-minutes: 2
         env:
+          ASI_REVIEWER_PERMIT: ${{ vars.ASI_REVIEWER_PERMIT }}
+          ASI_REVIEWER_BUDGET: ${{ vars.ASI_REVIEWER_BUDGET }}
+          ASI_REVIEWER_OWNER_PUBLIC_KEY: ${{ vars.ASI_REVIEWER_OWNER_PUBLIC_KEY }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_DIGEST: ${{ steps.admit.outputs.digest }}
+          BOT_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: node scripts/agent-os/reviewer-permit-cli.mjs --phase commit
+
+      - name: Run Adversarial Model Review & Submit Verdict
+        if: ${{ success() && steps.commit.outputs.code == 'ADMIT' }}
+        env:
+          ASI_REVIEWER_ADMIT: ${{ steps.commit.outputs.code }}
           BOT_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_READ_TOKEN: ${{ github.token }}
           CLOUDRU_API_KEY: ${{ secrets.CLOUDRU_API_KEY }}
@@ -56,6 +88,10 @@ jobs:
             const { execFileSync } = require("child_process");
 
             async function main() {
+              if (process.env.ASI_REVIEWER_ADMIT !== "ADMIT") {
+                console.error("NO_SIGNED_REVIEWER_PERMIT");
+                process.exit(2);
+              }
               if (!/^[a-f0-9]{40}$/.test(process.env.BASE_SHA) ||
                   !/^[a-f0-9]{40}$/.test(process.env.HEAD_SHA) ||
                   !/^[1-9][0-9]*$/.test(process.env.PR_NUMBER) ||
