@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   source_validation:
-    runs-on: [self-hosted, linux, x64, asi-vps-onecom]
+    runs-on: [self-hosted, "asi-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}"]
     # Job-guest cap is KVM launcher `timeout --signal=TERM --kill-after=30s 3300`
     # (55m before TERM). 45m leaves 10m for boot, registration, and shutdown.
     timeout-minutes: 45
@@ -457,7 +457,7 @@ jobs:
   validate:
     needs: [source_validation, channel-manager-recovery-postgres]
     if: ${{ !cancelled() }}
-    runs-on: [self-hosted, linux, x64, asi-vps-onecom]
+    runs-on: [self-hosted, "asi-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}"]
     timeout-minutes: 5
     steps:
       - name: Require successful source jobs
@@ -485,7 +485,7 @@ jobs:
 
   channel-manager-recovery-postgres:
     name: channel-manager-recovery-postgres
-    runs-on: [self-hosted, linux, x64, asi-vps-onecom]
+    runs-on: [self-hosted, "asi-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}"]
     timeout-minutes: 20
     # No GitHub API privileges in this job: PR SQL is untrusted test input.
     permissions: {}

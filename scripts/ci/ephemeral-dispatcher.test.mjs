@@ -12,25 +12,35 @@ import {
 const sha = 'a'.repeat(40);
 const labels = ['self-hosted', 'linux', 'x64', 'asi-vps-onecom'];
 const gold = {symlink:false, uid:0, mode:'0444', virtualBytes:GOLD_BYTES};
-const job = (id, over = {}) => ({id, name:'source_validation', status:'queued', conclusion:null, labels, ...over});
-const admitted = (over = {}) => ({
-  id:10, name:'PR Validation', event:'pull_request', repository:'ASI-integration/asi-landing', fork:false,
-  workflowFile:'.github/workflows/pr-validation.yml', workflowId:101, expectedWorkflowId:101,
-  headSha:sha, exactHead:sha, admission:'owner-comment', jobs:[job(3)], ...over,
-});
+const job = (id, over = {}, runId = 10, attempt = 1) => {
+  const name = over.name || 'source_validation';
+  return {id, name, status:'queued', conclusion:null, labels:['self-hosted', `asi-${runId}-${attempt}-${name}`], ...over};
+};
+const admitted = (over = {}) => {
+  const id = over.id ?? 10;
+  const runAttempt = over.runAttempt ?? 1;
+  return {
+    id, runAttempt, name:'PR Validation', event:'pull_request', repository:'ASI-integration/asi-landing', fork:false,
+    workflowFile:'.github/workflows/pr-validation.yml', workflowId:101, expectedWorkflowId:101,
+    headSha:sha, exactHead:sha, admission:'owner-comment',
+    jobs:[job(3, {}, id, runAttempt)], ...over,
+  };
+};
 
 test('only an admitted queued job is selected', () => {
   const runs = [
     admitted({id:11, name:'Deploy to VPS', workflowFile:'.github/workflows/deploy.yml'}),
     admitted({id:9, name:'AI Reviewer Gate', event:'pull_request_target', admission:'owner-comment'}),
     admitted({id:8, fork:true, repository:'other/asi-landing'}),
-    admitted({id:12, name:'Agent Intake Triage', event:'workflow_dispatch', admission:'default-branch', workflowFile:'.github/workflows/agent-intake-triage.yml', jobs:[job(4, {name:'triage'})]}),
-    admitted({id:7, jobs:[job(2), job(5, {name:'validate', status:'completed', conclusion:'failure'})]}),
+    admitted({id:12, name:'Agent Intake Triage', event:'workflow_dispatch', admission:'default-branch', workflowFile:'.github/workflows/agent-intake-triage.yml', jobs:[job(4, {name:'triage'}, 12)]}),
+    admitted({id:7, jobs:[job(2, {}, 7), job(5, {name:'validate', status:'completed', conclusion:'failure'}, 7)]}),
     admitted({id:6, admission:'missing'}),
     admitted(),
   ];
   const selected = selectJob(runs);
   assert.equal(selected.job.jobId, 2);
+  assert.equal(selected.job.routeLabel, 'asi-7-1-source_validation');
+  assert.equal(selectJob([admitted({jobs:[job(3, {labels})]})]).boot, false);
   assert.equal(selected.waiting, 3);
   assert.equal(selectJob(runs, null, [2, 4, 3]).reason, 'QUEUE_EMPTY');
   assert.equal(selectJob([admitted({headSha:'b'.repeat(40)})]).boot, false);
@@ -61,21 +71,21 @@ test('read-only github poll checks repo, workflow, head, owner, labels and job i
     'repos/ASI-integration/asi-landing/actions/workflows/pr-validation.yml': {id:101, name:'PR Validation', path:'.github/workflows/pr-validation.yml'},
     'repos/ASI-integration/asi-landing/actions/workflows/agent-intake-triage.yml': {id:202, name:'Agent Intake Triage', path:'.github/workflows/agent-intake-triage.yml'},
     'repos/ASI-integration/asi-landing/actions/runs?status=queued&per_page=20': {workflow_runs:[{
-      id:50, workflow_id:101, event:'pull_request', head_sha:sha,
+      id:50, workflow_id:101, event:'pull_request', head_sha:sha, run_attempt:1,
       head_repository:{full_name:'ASI-integration/asi-landing'}, pull_requests:[{number:687}],
     }, {
-      id:51, workflow_id:101, event:'pull_request', head_sha:sha,
+      id:51, workflow_id:101, event:'pull_request', head_sha:sha, run_attempt:1,
       head_repository:{full_name:'ASI-integration/asi-landing'}, pull_requests:[{number:688}],
     }]},
     'repos/ASI-integration/asi-landing/actions/runs?status=in_progress&per_page=20': {workflow_runs:[{
-      id:40, workflow_id:101, event:'pull_request', head_sha:sha,
+      id:40, workflow_id:101, event:'pull_request', head_sha:sha, run_attempt:1,
       head_repository:{full_name:'ASI-integration/asi-landing'}, pull_requests:[{number:687}],
     }]},
     'repos/ASI-integration/asi-landing/actions/runners?per_page=100': {total_count:1, runners:[{ephemeral:false, labels:['self-hosted','linux','x64']}]},
     'repos/ASI-integration/asi-landing/commits/main': {sha:'b'.repeat(40)},
-    'repos/ASI-integration/asi-landing/actions/runs/40/jobs?per_page=100': {jobs:[job(7)]},
-    'repos/ASI-integration/asi-landing/actions/runs/50/jobs?per_page=100': {jobs:[job(9)]},
-    'repos/ASI-integration/asi-landing/actions/runs/51/jobs?per_page=100': {jobs:[job(11)]},
+    'repos/ASI-integration/asi-landing/actions/runs/40/jobs?per_page=100': {jobs:[job(7, {}, 40)]},
+    'repos/ASI-integration/asi-landing/actions/runs/50/jobs?per_page=100': {jobs:[job(9, {}, 50)]},
+    'repos/ASI-integration/asi-landing/actions/runs/51/jobs?per_page=100': {jobs:[job(11, {}, 51)]},
     'repos/ASI-integration/asi-landing/pulls/687': {head:{sha}},
     'repos/ASI-integration/asi-landing/pulls/688': {head:{sha}},
     'repos/ASI-integration/asi-landing/issues/687/comments?per_page=100&page=1': [{
@@ -88,11 +98,13 @@ test('read-only github poll checks repo, workflow, head, owner, labels and job i
   const polled = pollQueue({get(path) { calls.push(path); if (!(path in pages)) throw new Error(path); return pages[path]; }});
   const selected = selectJob(polled.runs);
   assert.equal(selected.job.jobId, 7);
+  assert.equal(selected.job.routeLabel, 'asi-40-1-source_validation');
   assert.equal(calls.includes('repos/ASI-integration/asi-landing/actions/runs?status=in_progress&per_page=20'), true);
   assert.equal(calls.some(path => path.includes('registration-token')), false);
-  assert.equal(authorize(polled.runs && {
-    repository:'ASI-integration/asi-landing', jobId:9, workflowId:101, headSha:sha,
-    event:'pull_request', admission:'owner-comment', labels,
+  assert.equal(authorize({
+    repository:'ASI-integration/asi-landing', jobId:7, runId:40, runAttempt:1, jobName:'source_validation',
+    routeLabel:'asi-40-1-source_validation', workflowId:101, headSha:sha,
+    event:'pull_request', admission:'owner-comment', labels:['self-hosted', 'asi-40-1-source_validation'],
   }, 11).reason, 'UNAUTHORIZED_JOB');
   const blocked = pollQueue({get(path) {
     if (path.endsWith('/runners?per_page=100')) return {total_count:1, runners:[{ephemeral:false, labels}]};
@@ -157,4 +169,23 @@ test('installed dispatcher tree binds sbin to lib and rolls back a partial copy'
   });
   assert.equal(proof.status, 0, `${proof.stdout || ''}${proof.stderr || ''}`);
   assert.match(proof.stdout || '', /INSTALLED_DISPATCHER_PROVED/);
+});
+
+test('real gold v33 run-one admits one routed job and refuses a foreign job', () => {
+  const dir = fileURLToPath(new URL('./prove-gold-v33-run-one.sh', import.meta.url));
+  if (process.platform === 'win32') {
+    const script = `mkdir -p /mnt/hostc\nmountpoint -q /mnt/hostc || mount -t drvfs C: /mnt/hostc\nexport SRC=/mnt/hostc/ASI/worktrees/landing/pr-687-standing-gate/scripts/ci\nbash "$SRC/prove-gold-v33-run-one.sh"\n`;
+    const wrapped = spawnSync('wsl.exe', ['-d', 'ASI-Strigunov4-Restore', '-u', 'root', '--', 'bash', '-s'], {
+      input:script, encoding:'utf8', timeout:120000,
+    });
+    assert.equal(wrapped.status, 0, `${wrapped.stdout || ''}${wrapped.stderr || ''}`);
+    assert.match(`${wrapped.stdout || ''}`, /GOLD_V33_RUN_ONE_PROVED/);
+    return;
+  }
+  const proof = spawnSync('bash', [dir], {
+    encoding:'utf8', timeout:120000,
+    env:{...process.env, SRC:fileURLToPath(new URL('./', import.meta.url))},
+  });
+  assert.equal(proof.status, 0, `${proof.stdout || ''}${proof.stderr || ''}`);
+  assert.match(proof.stdout || '', /GOLD_V33_RUN_ONE_PROVED/);
 });

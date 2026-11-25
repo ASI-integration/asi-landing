@@ -44,12 +44,12 @@ case "\$2" in
   repos/ASI-integration/asi-landing) echo '{"full_name":"ASI-integration/asi-landing"}' ;;
   repos/ASI-integration/asi-landing/actions/workflows/pr-validation.yml) echo '{"id":101,"name":"PR Validation","path":".github/workflows/pr-validation.yml"}' ;;
   repos/ASI-integration/asi-landing/actions/workflows/agent-intake-triage.yml) echo '{"id":202,"name":"Agent Intake Triage","path":".github/workflows/agent-intake-triage.yml"}' ;;
-  'repos/ASI-integration/asi-landing/actions/runs?status=queued&per_page=20') echo '{"workflow_runs":[{"id":51,"workflow_id":101,"event":"pull_request","head_sha":"$SHA","head_repository":{"full_name":"ASI-integration/asi-landing"},"pull_requests":[{"number":688}]}]}' ;;
-  'repos/ASI-integration/asi-landing/actions/runs?status=in_progress&per_page=20') echo '{"workflow_runs":[{"id":40,"workflow_id":101,"event":"pull_request","head_sha":"$SHA","head_repository":{"full_name":"ASI-integration/asi-landing"},"pull_requests":[{"number":687}]}]}' ;;
+  'repos/ASI-integration/asi-landing/actions/runs?status=queued&per_page=20') echo '{"workflow_runs":[{"id":51,"workflow_id":101,"event":"pull_request","head_sha":"$SHA","run_attempt":1,"head_repository":{"full_name":"ASI-integration/asi-landing"},"pull_requests":[{"number":688}]}]}' ;;
+  'repos/ASI-integration/asi-landing/actions/runs?status=in_progress&per_page=20') echo '{"workflow_runs":[{"id":40,"workflow_id":101,"event":"pull_request","head_sha":"$SHA","run_attempt":1,"head_repository":{"full_name":"ASI-integration/asi-landing"},"pull_requests":[{"number":687}]}]}' ;;
   repos/ASI-integration/asi-landing/actions/runners?per_page=100) echo '{"total_count":0,"runners":[]}' ;;
   repos/ASI-integration/asi-landing/commits/main) echo '{"sha":"$MAIN"}' ;;
-  repos/ASI-integration/asi-landing/actions/runs/40/jobs?per_page=100) echo '{"jobs":[{"id":7,"name":"source_validation","status":"queued","conclusion":null,"labels":["self-hosted","linux","x64","asi-vps-onecom"]}]}' ;;
-  repos/ASI-integration/asi-landing/actions/runs/51/jobs?per_page=100) echo '{"jobs":[{"id":11,"name":"source_validation","status":"queued","conclusion":null,"labels":["self-hosted","linux","x64","asi-vps-onecom"]}]}' ;;
+  repos/ASI-integration/asi-landing/actions/runs/40/jobs?per_page=100) echo '{"jobs":[{"id":7,"name":"source_validation","status":"queued","conclusion":null,"labels":["self-hosted","asi-40-1-source_validation"]}]}' ;;
+  repos/ASI-integration/asi-landing/actions/runs/51/jobs?per_page=100) echo '{"jobs":[{"id":11,"name":"source_validation","status":"queued","conclusion":null,"labels":["self-hosted","asi-51-1-source_validation"]}]}' ;;
   repos/ASI-integration/asi-landing/pulls/687) echo '{"head":{"sha":"$SHA"}}' ;;
   repos/ASI-integration/asi-landing/pulls/688) echo '{"head":{"sha":"$SHA"}}' ;;
   'repos/ASI-integration/asi-landing/issues/687/comments?per_page=100&page=1') echo '[{"user":{"id":207600140,"type":"User"},"author_association":"OWNER","performed_via_github_app":null,"body":"ASI-OWNER-APPROVE:CONTRACT-CHANGE:687:$SHA"}]' ;;
@@ -69,6 +69,11 @@ binding = json.load(open(sys.argv[1]))
 if str(binding.get("jobId")) != sys.argv[2]:
     raise SystemExit(3)
 if binding.get("repository") != "ASI-integration/asi-landing":
+    raise SystemExit(3)
+route = "asi-%s-%s-%s" % (binding.get("runId"), binding.get("runAttempt"), binding.get("jobName"))
+if binding.get("routeLabel") != route:
+    raise SystemExit(3)
+if "linux" in binding.get("labels", []) or "asi-vps-onecom" in binding.get("labels", []):
     raise SystemExit(3)
 if os.environ.get("ASI_EXTRA_JOB_ID"):
     raise SystemExit(3)
@@ -101,6 +106,15 @@ export STARTED_MARK="$STATE/launcher.started"
 bash "$SRC/install-ephemeral-dispatcher.sh" --apply "$ROOT"
 test -x "$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh"
 test -x "$ROOT/usr/local/sbin/asi-gold-v33-adapter.sh"
+test -x "$ROOT/usr/local/sbin/asi-landing-gold-v33.sh"
+grep -q 'gold-v32' "$ROOT/usr/local/sbin/asi-landing-gold-v33.sh"
+grep -q 'ubuntu-noble-docker-nodejs-actions-runner.qcow2' "$ROOT/usr/local/sbin/asi-landing-gold-v33.sh"
+grep -q 'restrict=on' "$ROOT/usr/local/sbin/asi-landing-gold-v33.sh"
+grep -q 'token_courier.py' "$ROOT/usr/local/sbin/asi-landing-gold-v33.sh"
+grep -q 'github-fetch-proxy.cjs' "$ROOT/usr/local/sbin/asi-landing-gold-v33.sh"
+grep -q 'device_del' "$ROOT/usr/local/sbin/asi-landing-gold-v33.sh"
+grep -q 'gold-v32' "$ROOT/etc/asi/ephemeral-dispatcher.env"
+grep -q 'asi-landing-gold-v33.sh' "$ROOT/etc/asi/ephemeral-dispatcher.env"
 test -f "$ROOT/usr/local/lib/asi/ephemeral-dispatcher.mjs"
 test ! -e "$ROOT/usr/local/sbin/ephemeral-dispatcher.mjs"
 test "$("$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh" module-path)" = "$ROOT/usr/local/lib/asi/ephemeral-dispatcher.mjs"
@@ -127,7 +141,7 @@ PY
 
 ROOT2=$(mktemp -d)
 mkdir -p "$ROOT2/usr/local/sbin" "$ROOT2/usr/local/lib/asi" "$ROOT2/etc/systemd/system" "$ROOT2/etc/asi"
-for rel in usr/local/sbin/asi-ephemeral-dispatcher.sh usr/local/sbin/asi-gold-v33-adapter.sh usr/local/lib/asi/ephemeral-dispatcher.mjs etc/systemd/system/asi-ephemeral-dispatcher.service etc/asi/ephemeral-dispatcher.env; do
+for rel in usr/local/sbin/asi-ephemeral-dispatcher.sh usr/local/sbin/asi-gold-v33-adapter.sh usr/local/sbin/asi-landing-gold-v33.sh usr/local/lib/asi/ephemeral-dispatcher.mjs etc/systemd/system/asi-ephemeral-dispatcher.service etc/asi/ephemeral-dispatcher.env; do
   printf 'OLD\n' > "$ROOT2/$rel"
 done
 set +e
@@ -135,7 +149,7 @@ ASI_DISPATCHER_FAIL_POINT=after-shell bash "$SRC/install-ephemeral-dispatcher.sh
 partial=$?
 set -e
 test "$partial" -ne 0
-for rel in usr/local/sbin/asi-ephemeral-dispatcher.sh usr/local/sbin/asi-gold-v33-adapter.sh usr/local/lib/asi/ephemeral-dispatcher.mjs etc/systemd/system/asi-ephemeral-dispatcher.service etc/asi/ephemeral-dispatcher.env; do
+for rel in usr/local/sbin/asi-ephemeral-dispatcher.sh usr/local/sbin/asi-gold-v33-adapter.sh usr/local/sbin/asi-landing-gold-v33.sh usr/local/lib/asi/ephemeral-dispatcher.mjs etc/systemd/system/asi-ephemeral-dispatcher.service etc/asi/ephemeral-dispatcher.env; do
   test "$(cat "$ROOT2/$rel")" = OLD
 done
 rm -rf -- "$ROOT2"

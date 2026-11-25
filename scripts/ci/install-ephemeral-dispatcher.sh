@@ -10,6 +10,7 @@ SNAP=
 PATHS=(
   usr/local/sbin/asi-ephemeral-dispatcher.sh
   usr/local/sbin/asi-gold-v33-adapter.sh
+  usr/local/sbin/asi-landing-gold-v33.sh
   usr/local/lib/asi/ephemeral-dispatcher.mjs
   etc/systemd/system/asi-ephemeral-dispatcher.service
   etc/asi/ephemeral-dispatcher.env
@@ -35,13 +36,14 @@ copy_new() {
     return 1
   fi
   install -m 0755 "$HERE/asi-gold-v33-adapter.sh" "$ROOT/usr/local/sbin/asi-gold-v33-adapter.sh"
+  install -m 0755 "$HERE/asi-landing-gold-v33.sh" "$ROOT/usr/local/sbin/asi-landing-gold-v33.sh"
   install -m 0644 "$HERE/ephemeral-dispatcher.mjs" "$ROOT/usr/local/lib/asi/ephemeral-dispatcher.mjs"
   install -m 0644 "$HERE/asi-ephemeral-dispatcher.service" "$ROOT/etc/systemd/system/asi-ephemeral-dispatcher.service"
   cat > "$ROOT/etc/asi/ephemeral-dispatcher.env" <<'EOF'
 ASI_DISPATCHER_EXECUTE=NO
 ASI_SPEND_LEDGER=/home/administrator/asi-continuous/global-paid-spend.sqlite3
-ASI_GOLD_IMAGE=
-ASI_GOLD_LAUNCHER=
+ASI_GOLD_IMAGE=/var/cache/asi-landing-kvm/gold-v32/ubuntu-noble-docker-nodejs-actions-runner.qcow2
+ASI_GOLD_LAUNCHER=/usr/local/sbin/asi-landing-gold-v33.sh
 ASI_WORK_DIR=/var/tmp/asi-ephemeral-dispatcher
 ASI_LOCK_FILE=/var/tmp/asi-ephemeral-dispatcher.lock
 ASI_STATE_DIR=/var/tmp/asi-ephemeral-dispatcher-state

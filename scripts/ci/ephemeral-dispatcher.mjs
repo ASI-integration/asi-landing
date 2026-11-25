@@ -17,6 +17,7 @@ export const WORKFLOW_FILES = Object.freeze({
 export const ALLOWED_EVENTS = Object.freeze(['pull_request', 'workflow_dispatch']);
 export const ADMISSION_KINDS = Object.freeze(['CONTRACT-CHANGE', 'RELEASE-EXCEPTION', 'SECURITY-BASELINE-CHANGE']);
 export const REQUIRED_LABELS = Object.freeze(['self-hosted', 'linux', 'x64', 'asi-vps-onecom']);
+export const COMMON_CAPTURE_LABELS = Object.freeze(['linux', 'x64', 'asi-vps-onecom']);
 export const GUEST_TIMEOUT_SEC = 3300;
 export const KILL_AFTER_SEC = 30;
 export const MIN_FREE_KB = 7 * 1024 * 1024;
@@ -65,10 +66,29 @@ export function readSpendLedger(dbPath, spawn = spawnSync) {
   return Object.freeze({action:'ready', reason:'LEDGER_ZERO', boot:false, cap, paused, calls});
 }
 
-function hasLabels(labels) {
-  const names = new Set((Array.isArray(labels) ? labels : []).map(label =>
+function labelNames(labels) {
+  return new Set((Array.isArray(labels) ? labels : []).map(label =>
     String(typeof label === 'string' ? label : label?.name || '').toLowerCase()));
-  return REQUIRED_LABELS.every(label => names.has(label));
+}
+
+export function routeLabel(runId, attempt, jobName) {
+  if (!Number.isSafeInteger(runId) || runId <= 0 || !Number.isSafeInteger(attempt) || attempt <= 0)
+    return null;
+  if (typeof jobName !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(jobName)) return null;
+  return `asi-${runId}-${attempt}-${jobName}`;
+}
+
+function hasCommonCapture(labels) {
+  const names = labelNames(labels);
+  return names.has('self-hosted') && COMMON_CAPTURE_LABELS.every(label => names.has(label));
+}
+
+function jobRoute(run, job) {
+  const names = labelNames(job?.labels);
+  if (COMMON_CAPTURE_LABELS.some(label => names.has(label))) return null;
+  const route = routeLabel(run.id, run.runAttempt, job?.name);
+  if (!route || names.size !== 2 || !names.has('self-hosted') || !names.has(route)) return null;
+  return route;
 }
 
 export function selectJob(runs, activeJobId = null, deniedIds = []) {
@@ -87,10 +107,12 @@ export function selectJob(runs, activeJobId = null, deniedIds = []) {
     for (const job of run.jobs) {
       const id = Number.isSafeInteger(job?.id) && job.id > 0 ? job.id : null;
       if (!id || job.status !== 'queued' || job.conclusion) continue;
-      if (!hasLabels(job.labels) || id === activeJobId || denied.has(id)) continue;
+      const route = jobRoute(run, job);
+      if (!route || id === activeJobId || denied.has(id)) continue;
       waiting.push({
-        runId:run.id, jobId:id, workflow:run.name, workflowId:run.workflowId,
+        runId:run.id, runAttempt:run.runAttempt, jobId:id, workflow:run.name, workflowId:run.workflowId,
         workflowFile:run.workflowFile, headSha:run.headSha, event:run.event, name:job.name,
+        routeLabel:route,
       });
     }
   }
@@ -108,7 +130,7 @@ export function assessHost(host = {}, spawn = spawnSync) {
   const runners = host.runners;
   if (!runners || runners.total_count !== runners.runners?.length || !Array.isArray(runners.runners))
     return deny('RUNNERS_UNVERIFIED');
-  if (runners.runners.some(runner => runner?.ephemeral !== true && hasLabels(runner.labels)))
+  if (runners.runners.some(runner => runner?.ephemeral !== true && hasCommonCapture(runner.labels)))
     return deny('PERSISTENT_RUNNER_BLOCK');
   const gold = host.gold || {};
   if (gold.symlink === true || gold.uid !== 0 || gold.mode !== '0444' || gold.virtualBytes !== GOLD_BYTES)
@@ -159,12 +181,14 @@ export function pollQueue(api) {
     const repository = listedRun?.head_repository?.full_name;
     if (!known || repository !== REPO || !ALLOWED_EVENTS.includes(listedRun.event)) continue;
     if (!SHA.test(listedRun.head_sha || '')) continue;
+    if (!Number.isSafeInteger(listedRun.run_attempt) || listedRun.run_attempt <= 0) continue;
     const jobsPayload = api.get(`repos/${REPO}/actions/runs/${listedRun.id}/jobs?per_page=100`);
     if (!Array.isArray(jobsPayload?.jobs)) return deny('QUEUE_UNVERIFIED');
     let admission = null;
     let exactHead = null;
+    let prNumber = null;
     if (listedRun.event === 'pull_request') {
-      const prNumber = listedRun.pull_requests?.[0]?.number;
+      prNumber = listedRun.pull_requests?.[0]?.number;
       if (!Number.isSafeInteger(prNumber) || prNumber <= 0) continue;
       const pull = api.get(`repos/${REPO}/pulls/${prNumber}`);
       if (pull?.head?.sha !== listedRun.head_sha) continue;
@@ -187,7 +211,7 @@ export function pollQueue(api) {
     runs.push({
       id:listedRun.id, name:known.name, event:listedRun.event, repository:REPO, fork:false,
       workflowId:listedRun.workflow_id, expectedWorkflowId:listedRun.workflow_id, workflowFile:known.file,
-      headSha:listedRun.head_sha, exactHead, admission,
+      headSha:listedRun.head_sha, exactHead, admission, runAttempt:listedRun.run_attempt, prNumber,
       jobs:jobsPayload.jobs.map(job => ({
         id:job.id, name:job.name, status:job.status, conclusion:job.conclusion ?? null, labels:job.labels || [],
       })),
@@ -200,7 +224,12 @@ export function authorize(binding, requestedJobId) {
   const jobId = Number(requestedJobId);
   if (!binding || binding.repository !== REPO || binding.jobId !== jobId || !SHA.test(binding.headSha || ''))
     return deny('UNAUTHORIZED_JOB');
-  if (!Number.isSafeInteger(binding.workflowId) || !hasLabels(binding.labels)) return deny('UNAUTHORIZED_JOB');
+  const route = routeLabel(binding.runId, binding.runAttempt, binding.jobName);
+  const names = labelNames(binding.labels);
+  if (!route || binding.routeLabel !== route || COMMON_CAPTURE_LABELS.some(label => names.has(label)))
+    return deny('UNAUTHORIZED_JOB');
+  if (!Number.isSafeInteger(binding.workflowId) || names.size !== 2 || !names.has('self-hosted') || !names.has(route))
+    return deny('UNAUTHORIZED_JOB');
   if (binding.event === 'pull_request' && binding.admission !== 'owner-comment') return deny('UNAUTHORIZED_JOB');
   return Object.freeze({action:'allow', reason:'AUTHORIZED_JOB', boot:false, retry:false, jobId});
 }
@@ -354,11 +383,13 @@ if (entry.endsWith('/ephemeral-dispatcher.mjs')) {
     });
     if (host.action !== 'ready') { writeOut(host); process.exit(host.action === 'block' ? 2 : 0); }
     const selected = selectJob(polled.runs, null, denied);
+    const selectedRun = polled.runs.find(run => run.id === selected.job?.runId);
     writeOut(selected.boot ? {...selected, binding:{
-      repository:REPO, jobId:selected.job.jobId, runId:selected.job.runId, workflowId:selected.job.workflowId,
-      workflowFile:selected.job.workflowFile, headSha:selected.job.headSha, event:selected.job.event,
-      admission:polled.runs.find(run => run.id === selected.job.runId)?.admission,
-      labels:[...REQUIRED_LABELS],
+      repository:REPO, jobId:selected.job.jobId, runId:selected.job.runId, runAttempt:selected.job.runAttempt,
+      jobName:selected.job.name, routeLabel:selected.job.routeLabel, prNumber:selectedRun?.prNumber ?? null,
+      workflowId:selected.job.workflowId, workflowFile:selected.job.workflowFile, headSha:selected.job.headSha,
+      event:selected.job.event, admission:selectedRun?.admission,
+      labels:['self-hosted', selected.job.routeLabel],
     }} : selected);
     process.exit(0);
   }

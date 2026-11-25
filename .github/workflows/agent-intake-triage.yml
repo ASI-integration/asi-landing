@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   triage:
-    runs-on: [self-hosted, linux, x64, asi-vps-onecom]
+    runs-on: [self-hosted, "asi-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}"]
     timeout-minutes: 10
     steps:
       - name: Checkout
