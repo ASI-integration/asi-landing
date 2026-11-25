@@ -7,14 +7,13 @@ Wants=network-online.target
 Type=simple
 User=administrator
 Group=kvm
-Environment=ASI_PAID_CALLS_ENABLED=NO
-Environment=ASI_GLOBAL_CAP_KOPECKS=0
-Environment=ASI_DISPATCHER_EXECUTE=NO
+# The proven Gold launcher is administrator plus sudo -n for KVM and overlays.
+# NoNewPrivileges would block that setuid and the guest would never start.
+EnvironmentFile=-/etc/asi/ephemeral-dispatcher.env
 ExecStartPre=/usr/local/sbin/asi-ephemeral-dispatcher.sh recover
 ExecStart=/usr/local/sbin/asi-ephemeral-dispatcher.sh serve
 Restart=always
 RestartSec=30
-NoNewPrivileges=true
 
 [Install]
 WantedBy=multi-user.target

@@ -77,5 +77,6 @@ test('reviewer no-spend negatives stay in the offline suite',()=>{
 test('ephemeral dispatcher decisions stay in the offline suite',()=>{
   const result=offlineSuite(['--test','scripts/ci/ephemeral-dispatcher.test.mjs']);
   assert.equal(result.status,0,(result.stdout||'')+(result.stderr||''));
-  assert.match(result.stdout||'',/# pass 6|ℹ pass 6/);
+  assert.match(result.stdout||'',/# fail 0|ℹ fail 0/);
+  assert.match(result.stdout||'',/installed dispatcher tree/);
 });

@@ -1,51 +1,107 @@
 #!/bin/bash
-# Plan and, only when ASI_DISPATCHER_EXECUTE=YES, ask the host helper to boot one
-# overlay. This script does not build or replace the sealed Gold image.
+# One-guest dispatcher. Reads the spend ledger and GitHub with gh api.
+# Boots only through the Gold v3.3 adapter. Does not build or replace Gold.
 set -euo pipefail
 umask 077
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-MODE=${1:-plan}
-export ASI_PAID_CALLS_ENABLED=${ASI_PAID_CALLS_ENABLED:-NO}
-export ASI_GLOBAL_CAP_KOPECKS=${ASI_GLOBAL_CAP_KOPECKS:-0}
-if [[ "$ASI_PAID_CALLS_ENABLED" != NO || "$ASI_GLOBAL_CAP_KOPECKS" != 0 ]]; then
-  echo 'BLOCKED: PAID_CALLS_OR_CAP' >&2
-  exit 2
-fi
+MODE=${1:-serve}
+resolve_module() {
+  case "$HERE" in
+    */usr/local/sbin)
+      local lib
+      lib="$(dirname "$HERE")/lib/asi/ephemeral-dispatcher.mjs"
+      [[ -f "$lib" ]] || { echo 'BLOCKED: DISPATCHER_MODULE_MISSING' >&2; exit 2; }
+      printf '%s\n' "$lib"
+      ;;
+    *)
+      [[ -f "$HERE/ephemeral-dispatcher.mjs" ]] || { echo 'BLOCKED: DISPATCHER_MODULE_MISSING' >&2; exit 2; }
+      printf '%s\n' "$HERE/ephemeral-dispatcher.mjs"
+      ;;
+  esac
+}
+MOD=$(resolve_module)
 NODE=${ASI_NODE:-node}
+ADAPTER="$HERE/asi-gold-v33-adapter.sh"
+
 case "$MODE" in
-  plan|recover)
-    if [[ -n "${ASI_QUEUE_FILE:-}" && -f "${ASI_QUEUE_FILE}" ]]; then
-      "$NODE" "$HERE/ephemeral-dispatcher.mjs" "$MODE" < "${ASI_QUEUE_FILE}"
-    else
-      echo "DISPATCHER_${MODE^^}"
+  module-path)
+    printf '%s\n' "$MOD"
+    ;;
+  recover)
+    [[ -n "${ASI_GOLD_IMAGE:-}" && -n "${ASI_WORK_DIR:-}" ]] || { echo 'BLOCKED: RECOVERY_PATHS' >&2; exit 2; }
+    plan=$("$NODE" "$MOD" recover-plan)
+    set +e
+    list=$(printf '%s' "$plan" | "$NODE" -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const p=JSON.parse(s); if(p.rebuildGold!==false||!Array.isArray(p.remove)) process.exit(2); for (const f of p.remove) process.stdout.write(f+"\n")})')
+    rc=$?
+    set -e
+    [[ "$rc" -eq 0 ]] || { echo 'BLOCKED: RECOVERY_PATHS' >&2; exit 2; }
+    while IFS= read -r path; do
+      [[ -n "$path" ]] || continue
+      case "$path" in
+        "$ASI_WORK_DIR"/*.qcow2|"$ASI_WORK_DIR"/*/*.qcow2|"$ASI_WORK_DIR"/*.iso|"$ASI_WORK_DIR"/*/*.iso)
+          rm -f -- "$path"
+          ;;
+        *)
+          echo 'BLOCKED: RECOVERY_PATHS' >&2
+          exit 2
+          ;;
+      esac
+    done <<< "$list"
+    if command -v pgrep >/dev/null 2>&1; then
+      while read -r pid cmd; do
+        [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 1 ]] || continue
+        case "$cmd" in
+          *qemu-system*"$ASI_WORK_DIR"*) kill -TERM "$pid" 2>/dev/null || true ;;
+        esac
+      done < <(pgrep -af qemu-system-x86_64 || true)
     fi
+    echo 'RECOVER_OK'
     ;;
   serve)
-    if [[ "${ASI_DISPATCHER_EXECUTE:-NO}" != YES ]]; then
-      echo 'PLAN_ONLY'
-      exit 0
-    fi
-    if [[ -z "${ASI_GOLD_RUN_ONE:-}" || ! -x "${ASI_GOLD_RUN_ONE}" ]]; then
-      echo 'BLOCKED: GOLD_BOOT_HELPER_ABSENT' >&2
-      exit 2
-    fi
-    if [[ -z "${ASI_QUEUE_FILE:-}" || ! -f "${ASI_QUEUE_FILE}" ]]; then
-      echo 'BLOCKED: QUEUE_UNVERIFIED' >&2
-      exit 2
-    fi
-    plan=$("$NODE" "$HERE/ephemeral-dispatcher.mjs" plan < "${ASI_QUEUE_FILE}")
-    job=$(printf '%s' "$plan" | "$NODE" -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const p=JSON.parse(s);if(p.boot===true)process.stdout.write(String(p.job.jobId))})')
+    command -v flock >/dev/null 2>&1 || { echo 'BLOCKED: FLOCK_REQUIRED' >&2; exit 2; }
+    command -v timeout >/dev/null 2>&1 || { echo 'BLOCKED: TIMEOUT_REQUIRED' >&2; exit 2; }
+    set +e
+    decision=$("$NODE" "$MOD" decide)
+    rc=$?
+    set -e
+    printf '%s\n' "$decision"
+    [[ "$rc" -eq 0 ]] || exit "$rc"
+    job=$(printf '%s' "$decision" | "$NODE" -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const p=JSON.parse(s); if(p.boot===true) process.stdout.write(String(p.job.jobId))})')
     if [[ -z "$job" ]]; then
-      printf '%s\n' "$plan"
+      printf '%s\n' "$decision"
       exit 0
     fi
-    if command -v timeout >/dev/null 2>&1; then
-      exec timeout --signal=TERM --kill-after="${KILL_AFTER_SEC:-30}" "${GUEST_TIMEOUT_SEC:-3300}" "${ASI_GOLD_RUN_ONE}" "$job"
+    if [[ "${ASI_DISPATCHER_EXECUTE:-NO}" != YES ]]; then
+      printf '%s\n' "$decision"
+      echo 'BOOT_HELD'
+      exit 0
     fi
-    exec "${ASI_GOLD_RUN_ONE}" "$job"
+    [[ -n "${ASI_LOCK_FILE:-}" && -n "${ASI_STATE_DIR:-}" && -x "$ADAPTER" ]] || { echo 'BLOCKED: GOLD_LAUNCHER_ABSENT' >&2; exit 2; }
+    mkdir -p -- "$ASI_STATE_DIR"
+    binding="$ASI_STATE_DIR/binding.json"
+    printf '%s' "$decision" | "$NODE" -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const p=JSON.parse(s); if(!p.binding||p.binding.jobId!==p.job.jobId) process.exit(2); process.stdout.write(JSON.stringify(p.binding))})' > "$binding"
+    chmod 0600 "$binding"
+    exec 9>>"$ASI_LOCK_FILE"
+    if ! flock -n 9; then
+      echo 'BLOCKED: SLOT_BUSY' >&2
+      exit 2
+    fi
+    set +e
+    timeout --signal=TERM --kill-after="${ASI_KILL_AFTER_SEC:-30}" "${ASI_GUEST_TIMEOUT_SEC:-3300}" \
+      "$ADAPTER" run-one "$job" "$binding"
+    rc=$?
+    set -e
+    if [[ "$rc" -ne 0 ]]; then
+      if [[ -n "${ASI_NO_RETRY_FILE:-}" ]]; then
+        printf '%s\n' "$job" >> "$ASI_NO_RETRY_FILE"
+      fi
+      echo 'NO_RETRY'
+      exit 0
+    fi
+    echo 'GUEST_FINISHED'
     ;;
   *)
-    echo 'USAGE: asi-ephemeral-dispatcher.sh plan|recover|serve' >&2
+    echo 'USAGE: asi-ephemeral-dispatcher.sh module-path|recover|serve' >&2
     exit 2
     ;;
 esac
