@@ -11,7 +11,7 @@ test('privileged recovery helper preserves logs, no-retry, gold, and work dir mo
     const wrapped = spawnSync('wsl.exe', ['-d', 'ASI-Strigunov4-Restore', '-u', 'root', '--', 'bash', '-s'], {
       input: script,
       encoding: 'utf8',
-      timeout: 60000,
+      timeout: 120000,
     });
     assert.equal(wrapped.status, 0, `${wrapped.stdout || ''}${wrapped.stderr || ''}`);
     assert.match(`${wrapped.stdout || ''}`, /RECOVERY_HELPER_PROVED/);
@@ -19,7 +19,7 @@ test('privileged recovery helper preserves logs, no-retry, gold, and work dir mo
   }
   const result = spawnSync('bash', [proof], {
     encoding: 'utf8',
-    timeout: 60000,
+    timeout: 120000,
     env: { ...process.env, SRC: source },
   });
   assert.equal(result.status, 0, `${result.stdout || ''}${result.stderr || ''}`);

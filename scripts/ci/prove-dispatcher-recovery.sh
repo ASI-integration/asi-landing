@@ -32,6 +32,10 @@ expect_block() {
   grep -q "$want" "$err" || { echo "MISSING $want" >&2; cat "$err" >&2; exit 1; }
 }
 
+stage self-check
+out=$(ASI_RECOVERY_SELF_CHECK=YES bash "$HELPER" --self-check)
+[[ "$out" == SELF_CHECK_OK ]] || { echo "SELF_CHECK $out" >&2; exit 1; }
+
 stage host-root-refused
 expect_block HOST_ROOT bash "$ACTIVATE" --apply /
 
@@ -180,9 +184,12 @@ grep -q '^ExecStartPre=+/usr/local/libexec/asi-ephemeral-dispatcher-recover$' "$
 grep -q 'O_NOFOLLOW' "$ROOT/usr/local/libexec/asi-ephemeral-dispatcher-recover"
 bash "$ACTIVATE" --plan >"$STATE/plan.out"
 grep -q '^STEP1 ' "$STATE/plan.out"
+grep -q 'successful apply is not rolled back' "$STATE/plan.out"
 grep -q '^STEP4 ' "$STATE/plan.out"
 grep -q '^ROLLBACK ' "$STATE/plan.out"
-! grep -q 'chmod' "$ROOT/usr/local/libexec/asi-ephemeral-dispatcher-recover"
+! grep -E '(^|[[:space:]])chmod[[:space:]]' "$ROOT/usr/local/libexec/asi-ephemeral-dispatcher-recover"
+grep -q 'pidfd_send_signal' "$ROOT/usr/local/libexec/asi-ephemeral-dispatcher-recover"
+grep -q 'renameat' "$ROOT/usr/local/libexec/asi-ephemeral-dispatcher-recover"
 [[ "$(cat "$ROOT/sentinel.env")" == SENTINEL ]] || { echo 'SENTINEL_CHANGED' >&2; exit 1; }
 bash "$ACTIVATE" --rollback "$ROOT/.asi-recovery-snapshot" "$ROOT" >"$STATE/rollback.out"
 grep -q RECOVERY_ROLLBACK_OK "$STATE/rollback.out"
@@ -192,4 +199,129 @@ rm -rf -- "$ROOT" "$fake"
 
 grep -q '^User=administrator' "$SRC/asi-ephemeral-dispatcher.service"
 grep -q '^ExecStartPre=/usr/local/sbin/asi-ephemeral-dispatcher.sh recover' "$SRC/asi-ephemeral-dispatcher.service"
+
+stage scenario
+awk '
+  /^[[:space:]]*# --- STEP2 ---/ {s=1}
+  /^[[:space:]]*# --- STEP3 ---/ {s=0}
+  s && /--rollback/ {found=1}
+  END { exit found ? 1 : 0 }
+' "$SRC/onecom-dispatcher-recovery.sh" || { echo 'STEP2_ROLLBACK' >&2; exit 1; }
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'
+DRY=$(mktemp -d)
+BIN=$(mktemp -d)
+LOG=$STATE/systemctl.log
+JDIR=$STATE/journal
+mkdir -p "$JDIR" "$DRY/etc/asi"
+printf 'gold\n' > "$DRY/gold.qcow2"
+chmod 0444 "$DRY/gold.qcow2"
+printf '9\n' > "$DRY/no-retry.ids"
+python3 - "$DRY/ledger.sqlite3" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+db.execute("CREATE TABLE policy (id INTEGER PRIMARY KEY, cap INTEGER, paused INTEGER)")
+db.execute("CREATE TABLE calls (id INTEGER PRIMARY KEY)")
+db.execute("INSERT INTO policy (id, cap, paused) VALUES (1, 0, 0)")
+db.commit()
+PY
+cat > "$DRY/etc/asi/ephemeral-dispatcher.env" <<EOF
+ASI_DISPATCHER_EXECUTE=NO
+ASI_PAID_CALLS_ENABLED=NO
+ASI_SPEND_LEDGER=$DRY/ledger.sqlite3
+ASI_GOLD_IMAGE=$DRY/gold.qcow2
+ASI_NO_RETRY_FILE=$DRY/no-retry.ids
+ASI_WORK_DIR=$DRY/work
+ASI_LOCK_FILE=$DRY/lock
+EOF
+cat > "$BIN/systemctl" <<EOF
+#!/bin/sh
+printf '%s\n' "\$*" >> "$LOG"
+case "\$1" in
+  is-active) printf '%s\n' inactive; exit 3 ;;
+  is-enabled) printf '%s\n' disabled; exit 1 ;;
+  start|restart) mkdir -p "$JDIR"; : > "$JDIR/started"; exit 0 ;;
+  *) exit 0 ;;
+esac
+EOF
+cat > "$BIN/journalctl" <<EOF
+#!/bin/sh
+printf '%s\n' "\$*" >> "$LOG"
+if printf '%s' "\$*" | grep -q -- --show-cursor; then
+  printf '%s\n' '-- cursor: s=test;i=1;b=test;'
+  exit 0
+fi
+if printf '%s' "\$*" | grep -q -- --after-cursor; then
+  if [ -f "$JDIR/started" ]; then printf '%s\n' RECOVER_OK; fi
+  exit 0
+fi
+printf '%s\n' 'OLD RECOVER_OK'
+exit 0
+EOF
+printf '%s\n' '#!/bin/sh' 'printf "%s\n" "{\"action\":\"hold\",\"reason\":\"QUEUE_EMPTY\",\"boot\":false}"' > "$BIN/node"
+chmod 0755 "$BIN/systemctl" "$BIN/journalctl" "$BIN/node"
+printf 'OLD\n' > "$STATE/old-recovery"
+install -D -m 0644 "$STATE/old-recovery" "$DRY/usr/local/libexec/asi-ephemeral-dispatcher-recover"
+install -D -m 0644 "$STATE/old-recovery" "$DRY/etc/systemd/system/asi-ephemeral-dispatcher.service.d/recovery.conf"
+: > "$LOG"
+set +e
+ASI_RECOVERY_DRY_ROOT="$DRY" ASI_RECOVERY_DRY_BIN="$BIN" ASI_RECOVERY_FAIL_POINT=after-start \
+  bash "$SRC/onecom-dispatcher-recovery.sh" install-and-verify >"$STATE/fail.out" 2>"$STATE/fail.err"
+fail_rc=$?
+set -e
+[[ "$fail_rc" -ne 0 ]] || { echo 'FAILPOINT_SUCCEEDED' >&2; exit 1; }
+grep -q FAILED_AFTER_START "$STATE/fail.err" || { echo 'FAILPOINT_MISSING' >&2; cat "$STATE/fail.err" >&2; exit 1; }
+[[ "$(cat "$DRY/usr/local/libexec/asi-ephemeral-dispatcher-recover")" == OLD ]] || { echo 'FAIL_NOT_ROLLED_BACK' >&2; cat "$STATE/fail.err" >&2; exit 1; }
+grep -q '^start ' "$LOG"
+grep -q '^stop ' "$LOG"
+grep -q '^disable ' "$LOG"
+! grep -q '^enable ' "$LOG"
+: > "$LOG"
+rm -f -- "$JDIR/started"
+ASI_RECOVERY_DRY_ROOT="$DRY" ASI_RECOVERY_DRY_BIN="$BIN" \
+  bash "$SRC/onecom-dispatcher-recovery.sh" install-and-verify >"$STATE/scenario.out" 2>"$STATE/scenario.err" \
+  || { echo 'SCENARIO_FAILED' >&2; cat "$STATE/scenario.out" "$STATE/scenario.err" >&2; exit 1; }
+grep -q RECOVERY_SCENARIO_OK "$STATE/scenario.out"
+grep -q pidfd_send_signal "$DRY/usr/local/libexec/asi-ephemeral-dispatcher-recover"
+grep -q '^daemon-reload$' "$LOG"
+grep -q '^start ' "$LOG"
+grep -q -- '--after-cursor' "$LOG"
+! grep -q '^enable ' "$LOG"
+[[ "$(cat "$DRY/no-retry.ids")" == 9 ]] || { echo 'SCENARIO_NO_RETRY' >&2; exit 1; }
+[[ "$(stat -c '%a' -- "$DRY/gold.qcow2")" == 444 ]] || { echo 'SCENARIO_GOLD' >&2; exit 1; }
+: > "$LOG"
+set +e
+ASI_RECOVERY_DRY_ROOT="$DRY" ASI_RECOVERY_DRY_BIN="$BIN" \
+  bash "$SRC/onecom-dispatcher-recovery.sh" enable >"$STATE/enable.out" 2>"$STATE/enable.err"
+enable_rc=$?
+set -e
+[[ "$enable_rc" -ne 0 ]]
+grep -q ENABLE_UNAUTHORIZED "$STATE/enable.err"
+! grep -q '^enable ' "$LOG"
+enable_gate=$SRC/../../docs/operations/onecom-dispatcher-recovery-398c2ef0/recovery-enable-owner-gate.json
+python3 - "$enable_gate" "$STATE/enable-gate.json" <<'PY'
+import json, sys
+gate = json.load(open(sys.argv[1], encoding="utf-8"))
+gate["status"] = "approved"
+json.dump(gate, open(sys.argv[2], "w"))
+PY
+: > "$LOG"
+ASI_RECOVERY_DRY_ROOT="$DRY" ASI_RECOVERY_DRY_BIN="$BIN" \
+  ASI_RECOVERY_ENABLE_AUTHORIZED=YES ASI_RECOVERY_ENABLE_GATE="$STATE/enable-gate.json" \
+  bash "$SRC/onecom-dispatcher-recovery.sh" enable >"$STATE/enabled.out" 2>"$STATE/enabled.err" \
+  || { echo 'ENABLE_FAILED' >&2; cat "$STATE/enabled.err" >&2; exit 1; }
+grep -q RECOVERY_ENABLE_OK "$STATE/enabled.out"
+grep -q '^enable asi-ephemeral-dispatcher.service$' "$LOG"
+install_gate=$SRC/../../docs/operations/onecom-dispatcher-recovery-398c2ef0/recovery-dropin-owner-gate.json
+python3 -c 'import json,sys; assert json.load(open(sys.argv[1], encoding="utf-8"))["status"]=="missing"' "$install_gate"
+: > "$LOG"
+set +e
+PATH="$BIN:$PATH" ASI_DISPATCHER_HOST_INSTALL=YES \
+  bash "$SRC/onecom-dispatcher-recovery.sh" install-and-verify >"$STATE/host.out" 2>"$STATE/host.err"
+host_rc=$?
+set -e
+[[ "$host_rc" -ne 0 ]]
+grep -q GATE_MISSING "$STATE/host.err" || { echo 'HOST_NOT_BLOCKED' >&2; cat "$STATE/host.err" >&2; exit 1; }
+[[ ! -s "$LOG" ]] || { echo 'HOST_MUTATED' >&2; cat "$LOG" >&2; exit 1; }
+rm -rf -- "$DRY" "$BIN"
+
 echo RECOVERY_HELPER_PROVED
