@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "asi.agent-os.owner-gate.v1",
+  "taskId": "onecom-dispatcher-recovery-dropin-398c2ef0",
+  "status": "missing",
+  "action": "repository_or_environment_settings_change",
+  "target": "production",
+  "identity": {
+    "ref": "refs/heads/main",
+    "sha": "398c2ef0c2432aff8e841cc3f8075794c869a82a"
+  },
+  "allowedSideEffect": "Install only /usr/local/libexec/asi-ephemeral-dispatcher-recover and the systemd drop-in asi-ephemeral-dispatcher.service.d/recovery.conf on one.com, then daemon-reload. The helper may run as root solely for ExecStartPre. The main dispatcher process stays User=administrator. Do not enable, start, or restart the unit. Do not set ASI_DISPATCHER_EXECUTE. Do not widen the work directory. Do not clear NO_RETRY. Do not rebuild Gold. Do not change branch protection. Do not set ASI_PAID_CALLS_ENABLED. Do not change the spend cap. Do not remove HOLD from Issue #686.",
+  "postActionVerification": [
+    "systemctl cat asi-ephemeral-dispatcher.service shows User=administrator and ExecStartPre=+/usr/local/libexec/asi-ephemeral-dispatcher-recover.",
+    "The work directory remains root:asi-landing-kvm mode 0710.",
+    "Logs under the work directory and the NO_RETRY file are unchanged.",
+    "The sealed Gold image remains root-owned, mode 0444, and its virtual size remains 42949672960 bytes.",
+    "ASI_DISPATCHER_EXECUTE remains NO, ASI_PAID_CALLS_ENABLED remains NO, and the spend ledger remains cap 0, paused 0, and paid call count 0."
+  ],
+  "authorization": null,
+  "typedConfirmation": {
+    "present": false,
+    "countsAsOwnerApproval": false
+  }
+}
