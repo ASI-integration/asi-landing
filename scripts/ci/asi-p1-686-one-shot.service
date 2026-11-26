@@ -1,0 +1,15 @@
+[Unit]
+Description=One-shot Issue 686 cycle through the verified adapters
+ConditionPathExists=!/etc/asi/p1-686-authorization
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/administrator/asi-continuous
+EnvironmentFile=-/etc/asi/ephemeral-dispatcher.env
+EnvironmentFile=/etc/asi/p1-686-one-shot.env
+ExecStart=/bin/bash /usr/local/libexec/asi-issue-686-one-shot.sh
+ExecStopPost=/bin/bash /usr/local/libexec/asi-issue-686-one-shot.sh --reset-only
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
