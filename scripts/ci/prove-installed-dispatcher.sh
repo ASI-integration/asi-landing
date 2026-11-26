@@ -4,7 +4,18 @@
 set -euo pipefail
 umask 077
 SRC=${SRC:?}
-NODE=${ASI_NODE:-node}
+# Capture Node 20 before PATH is reduced to the fixture bin. The sealed guest
+# also has /usr/bin/node v18, and that binary must not win after the reset.
+if [[ -n "${ASI_NODE:-}" ]]; then
+  case "$ASI_NODE" in
+    */*) REAL_NODE=$ASI_NODE ;;
+    *) REAL_NODE=$(command -v "$ASI_NODE" || true) ;;
+  esac
+else
+  REAL_NODE=$(command -v node || true)
+fi
+[[ -n "${REAL_NODE:-}" && -x "$REAL_NODE" ]] || { echo 'NODE20_REQUIRED' >&2; exit 1; }
+[[ "$("$REAL_NODE" -p 'process.versions.node.split(".")[0]')" == 20 ]] || { echo "NODE20_REQUIRED got $("$REAL_NODE" -v)" >&2; exit 1; }
 ROOT=$(mktemp -d)
 BIN=$(mktemp -d)
 WORK=$(mktemp -d)
@@ -24,29 +35,20 @@ diagnose() {
     echo "saved=$dest"
     id || true
     echo "gold=$(stat -c '%u:%g:%a %F' "$GOLD" 2>&1 || true)"
-    echo "node=$(${NODE:-node} -v 2>&1 || true)"
+    echo "node=$("$REAL_NODE" -v 2>&1 || true) path=$REAL_NODE"
     echo "--- seal.out ---"; cat "$STATE/seal.out" 2>/dev/null || true
     echo "--- seal.err ---"; cat "$STATE/seal.err" 2>/dev/null || true
     echo "--- serve.out ---"; cat "$STATE/serve.out" 2>/dev/null || true
     echo "--- serve.err ---"; cat "$STATE/serve.err" 2>/dev/null || true
     echo "--- second.out ---"; cat "$STATE/second.out" 2>/dev/null || true
     echo "--- second.err ---"; cat "$STATE/second.err" 2>/dev/null || true
+    echo "--- retry.out ---"; cat "$STATE/retry.out" 2>/dev/null || true
+    echo "--- retry.err ---"; cat "$STATE/retry.err" 2>/dev/null || true
   } >"$dest" 2>&1 || true
   cat "$dest" >&2 || true
 }
 cleanup() { rm -rf -- "$ROOT" "$BIN" "$WORK" "$STATE"; }
 trap cleanup EXIT
-# An unprivileged user cannot enter a mount namespace directly. A user
-# namespace maps that user's fixture to uid 0 so the production seal check
-# sees a root-owned 0444 image, then mount --bind can replace meminfo.
-# Outside that namespace the same fixture stays non-root and must be blocked.
-ns_unshare() {
-  if [[ "$(id -u)" -eq 0 ]]; then
-    unshare --mount "$@"
-  else
-    unshare --user --map-root-user --mount "$@"
-  fi
-}
 
 python3 - "$LEDGER" <<'PY'
 import sqlite3, sys
@@ -115,11 +117,13 @@ if [ -n "${HOLD_FILE:-}" ]; then
   while [ ! -f "$RELEASE" ]; do sleep 0.1; done
 fi
 if [ -n "${SLEEP_FOR:-}" ]; then sleep "$SLEEP_FOR"; fi
+if [ -n "${FAIL_LAUNCH:-}" ]; then exit 9; fi
 EOF
 chmod 0755 "$BIN/launcher"
 
 export PATH="$BIN:/usr/bin:/bin"
-export ASI_NODE="$NODE"
+export ASI_NODE="$REAL_NODE"
+export ASI_REAL_NODE="$REAL_NODE"
 export ASI_GH="$BIN/gh"
 export ASI_SPEND_LEDGER="$LEDGER"
 export ASI_GOLD_IMAGE="$GOLD"
@@ -204,7 +208,9 @@ printf 'disk\n' > "$WORK/run-40-1-source_validation/guest-1/disk.qcow2"
 printf 'log\n' > "$WORK/run-40-1-source_validation/guest-1/console.log"
 printf 'keep\n' > "$STATE/outside.txt"
 ln -s "$STATE/outside.txt" "$WORK/guest/evil.qcow2"
-python3 -c 'import os,sys; os.execv("/bin/sleep", ["qemu-system-x86_64", "30", sys.argv[1]])' "$WORK/guest" &
+# argv0 carries the qemu-system name and the work directory. sleep's only
+# interval is 30; the guest path is not passed as a time argument.
+(exec -a "qemu-system-x86_64 $WORK/guest" sleep 30) &
 guest_pid=$!
 sleep 0.2
 "$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh" recover >/dev/null
@@ -232,25 +238,12 @@ test ! -s "$OUT"
 test ! -s "$STARTED_MARK"
 grep -q UNAUTHORIZED_JOB "$STATE/unauth.out" "$STATE/unauth.err"
 rm -f -- "$binding"
-printf 'MemAvailable:    8388608 kB\n' > "$STATE/meminfo"
-export ASI_MEMINFO_FILE=$STATE/meminfo
-export ASI_DISPATCHER=$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh
-cat > "$STATE/serve-isolated.sh" <<'EOF'
-#!/bin/bash
-set -euo pipefail
-gold_stat=$(stat -c '%u:%a' "$ASI_GOLD_IMAGE")
-if [[ "$gold_stat" != 0:444 || -L "$ASI_GOLD_IMAGE" ]]; then
-  echo "GOLD_FIXTURE_NOT_ROOT_SEALED stat=$gold_stat" >&2
-  exit 1
-fi
-mount --bind "$ASI_MEMINFO_FILE" /proc/meminfo
-grep -q '^MemAvailable:[[:space:]]*8388608 kB$' /proc/meminfo || { echo MEMINFO_BIND_FAILED >&2; exit 1; }
-exec "$ASI_DISPATCHER" serve
-EOF
-chmod 0755 "$STATE/serve-isolated.sh"
+# Real production decide, no fixture. A non-root owner of a 0444 image must
+# be rejected before any guest boot. Root cannot demonstrate that uid.
 if [[ "$(id -u)" -ne 0 ]]; then
+  [[ "$(stat -c %u "$GOLD")" != 0 ]] || { echo 'GOLD_FIXTURE_IS_ROOT' >&2; diagnose; exit 1; }
   set +e
-  "$ASI_DISPATCHER" serve >"$STATE/seal.out" 2>"$STATE/seal.err"
+  "$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh" serve >"$STATE/seal.out" 2>"$STATE/seal.err"
   seal=$?
   set -e
   if [[ "$seal" -eq 0 ]] || ! grep -q GOLD_SEAL_BLOCK "$STATE/seal.out"; then
@@ -258,9 +251,44 @@ if [[ "$(id -u)" -ne 0 ]]; then
     diagnose
     exit 1
   fi
+  test ! -s "$OUT"
+  test ! -s "$STATE/no-retry.ids"
 fi
+# Test contour only: the installed module still runs assessHost, pollQueue,
+# selectJob and the ledger read. lstat of the fixture and /proc/meminfo are
+# the substituted inputs. Production sources are not modified.
+cat > "$STATE/host-fixture.cjs" <<'EOF'
+const fs = require('fs');
+const path = require('path');
+const realLstat = fs.lstatSync;
+const realRead = fs.readFileSync;
+const gold = process.env.ASI_GOLD_IMAGE || '';
+fs.lstatSync = function(target, options) {
+  if (gold && path.resolve(String(target)) === path.resolve(gold)) {
+    return {isSymbolicLink() { return false; }, uid:0, mode:0o100444};
+  }
+  return realLstat.call(fs, target, options);
+};
+fs.readFileSync = function(target, ...args) {
+  if (String(target) === '/proc/meminfo') return 'MemAvailable:    8388608 kB\n';
+  return realRead.call(fs, target, ...args);
+};
+EOF
+cat > "$STATE/node-fixture" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+real=${ASI_REAL_NODE:?}
+if [[ "${ASI_TEST_HOST_FIXTURE:-}" == 1 && "${1:-}" == *ephemeral-dispatcher.mjs && "${2:-}" == decide ]]; then
+  exec "$real" --require "${ASI_HOST_FIXTURE:?}" "$@"
+fi
+exec "$real" "$@"
+EOF
+chmod 0755 "$STATE/node-fixture"
+export ASI_NODE=$STATE/node-fixture
+export ASI_HOST_FIXTURE=$STATE/host-fixture.cjs
+export ASI_TEST_HOST_FIXTURE=1
 export HOLD_FILE=1 STARTED=$STATE/started RELEASE=$STATE/release
-ns_unshare "$STATE/serve-isolated.sh" >"$STATE/serve.out" 2>"$STATE/serve.err" &
+"$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh" serve >"$STATE/serve.out" 2>"$STATE/serve.err" &
 holder=$!
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
   [[ -f "$STARTED_MARK" ]] && break
@@ -273,12 +301,20 @@ if [[ ! -s "$STARTED_MARK" ]]; then
 fi
 grep -q LAUNCHER_STARTED "$STARTED_MARK"
 test "$(cat "$OUT")" = 7
+python3 - "$STATE/binding.json" "$SHA" <<'PY'
+import json, sys
+binding = json.load(open(sys.argv[1]))
+if binding.get("jobId") != 7 or binding.get("headSha") != sys.argv[2]:
+    raise SystemExit("BINDING_MISMATCH")
+if binding.get("routeLabel") != "asi-40-1-source_validation":
+    raise SystemExit("BINDING_MISMATCH")
+PY
 grep -q 'status=in_progress' "$GH_LOG"
 grep -q 'status=pending' "$GH_LOG"
 grep -q 'actions/runs/40/jobs' "$GH_LOG"
 if grep -q registration-token "$GH_LOG"; then echo 'token request' >&2; exit 1; fi
 set +e
-ns_unshare "$STATE/serve-isolated.sh" >"$STATE/second.out" 2>"$STATE/second.err"
+"$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh" serve >"$STATE/second.out" 2>"$STATE/second.err"
 second=$?
 set -e
 if [[ "$second" -ne 2 ]] || ! grep -q SLOT_BUSY "$STATE/second.err"; then
@@ -287,7 +323,13 @@ if [[ "$second" -ne 2 ]] || ! grep -q SLOT_BUSY "$STATE/second.err"; then
   exit 1
 fi
 test "$(wc -l < "$OUT")" -eq 1
+if [[ -s "$STATE/no-retry.ids" ]]; then echo 'NO_RETRY_TOO_EARLY' >&2; diagnose; exit 1; fi
 : > "$RELEASE"
 wait "$holder"
 grep -q GUEST_FINISHED "$STATE/serve.out"
+unset HOLD_FILE
+export FAIL_LAUNCH=1
+"$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh" serve >"$STATE/retry.out" 2>"$STATE/retry.err"
+grep -q NO_RETRY "$STATE/retry.out"
+grep -qx 7 "$STATE/no-retry.ids"
 echo 'INSTALLED_DISPATCHER_PROVED'
