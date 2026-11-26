@@ -6,15 +6,18 @@
   "target": "production",
   "identity": {
     "ref": "refs/heads/main",
-    "sha": "398c2ef0c2432aff8e841cc3f8075794c869a82a"
+    "sha": "398c2ef0c2432aff8e841cc3f8075794c869a82a",
+    "recordId": "exact-sha=440155902f3f263eb8308ae96dbafdbb548cc55e;package-sha256=7e6561ed08e3904a67e89f93de5bbd084cad50b5f06599642afdbfcf8ac28082;scenario-sha256=ed39280b65b971d2fe89b147f5e44f94fb49a50399fa6c37b4faa463c548c411"
   },
-  "allowedSideEffect": "Install only /usr/local/libexec/asi-ephemeral-dispatcher-recover and the systemd drop-in asi-ephemeral-dispatcher.service.d/recovery.conf on one.com, then daemon-reload. The helper may run as root solely for ExecStartPre. The main dispatcher process stays User=administrator. Do not enable, start, or restart the unit. Do not set ASI_DISPATCHER_EXECUTE. Do not widen the work directory. Do not clear NO_RETRY. Do not rebuild Gold. Do not change branch protection. Do not set ASI_PAID_CALLS_ENABLED. Do not change the spend cap. Do not remove HOLD from Issue #686.",
+  "allowedSideEffect": "Install only /usr/local/libexec/asi-ephemeral-dispatcher-recover and asi-ephemeral-dispatcher.service.d/recovery.conf from exact recovery commit 440155902f3f263eb8308ae96dbafdbb548cc55e package SHA256 7e6561ed08e3904a67e89f93de5bbd084cad50b5f06599642afdbfcf8ac28082 scenario SHA256 ed39280b65b971d2fe89b147f5e44f94fb49a50399fa6c37b4faa463c548c411 on protected main 398c2ef0c2432aff8e841cc3f8075794c869a82a. File SHA256 recover=040a1c7c580cccf68aa4e01665bf1939964a33cc7bf0802b1420f3a7254629d7 drop-in=1181ffc98962418eead3b2f4ad9dab8eadf54f87d0971d4970ba839d9e68ebe8 activate=efb441aa4144dc519c4066cbf6a5b0028ee9b52ddd9f6f75b808a74c33411764. Then daemon-reload. The helper may run as root solely for ExecStartPre. The main dispatcher process stays User=administrator. Do not enable the unit in this stage. Do not set ASI_DISPATCHER_EXECUTE. Do not widen the work directory. Do not clear NO_RETRY. Do not rebuild Gold. Do not change branch protection. Do not set ASI_PAID_CALLS_ENABLED. Do not change the spend cap. Do not remove HOLD from Issue #686. This gate does not authorize any other commit or package hash.",
   "postActionVerification": [
     "systemctl cat asi-ephemeral-dispatcher.service shows User=administrator and ExecStartPre=+/usr/local/libexec/asi-ephemeral-dispatcher-recover.",
     "The work directory remains root:asi-landing-kvm mode 0710.",
-    "Logs under the work directory and the NO_RETRY file are unchanged.",
+    "The journal lines after this start contain RECOVER_OK. A RECOVER_OK from an earlier start is not accepted.",
+    "The NO_RETRY file hash is unchanged.",
+    "The sqlite spend ledger reads cap 0, paused 0, and paid call count 0.",
     "The sealed Gold image remains root-owned, mode 0444, and its virtual size remains 42949672960 bytes.",
-    "ASI_DISPATCHER_EXECUTE remains NO, ASI_PAID_CALLS_ENABLED remains NO, and the spend ledger remains cap 0, paused 0, and paid call count 0."
+    "ASI_DISPATCHER_EXECUTE remains NO, ASI_PAID_CALLS_ENABLED remains NO, and rollback restores the original active and enabled unit state."
   ],
   "authorization": null,
   "typedConfirmation": {

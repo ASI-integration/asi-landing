@@ -208,6 +208,9 @@ awk '
   END { exit found ? 1 : 0 }
 ' "$SRC/onecom-dispatcher-recovery.sh" || { echo 'STEP2_ROLLBACK' >&2; exit 1; }
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'
+if [[ -f "$SRC/../../.git" ]] && grep -q '^gitdir: [A-Za-z]:' "$SRC/../../.git"; then
+  export GIT_DIR=/mnt/hostc/asi-landing/.git/worktrees/dispatcher-recovery
+fi
 DRY=$(mktemp -d)
 BIN=$(mktemp -d)
 LOG=$STATE/systemctl.log
