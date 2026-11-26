@@ -354,8 +354,8 @@ install_contract=$SRC/../../docs/operations/onecom-dispatcher-recovery-398c2ef0/
 python3 - "$install_gate" "$install_contract" "$enable_gate" <<'PY'
 import json, sys
 gate, contract, enable = (json.load(open(path, encoding="utf-8")) for path in sys.argv[1:4])
-if gate["status"] != "missing" or gate["authorization"] is not None:
-    raise SystemExit("fixed helper is awaiting a separate install approval")
+if gate["status"] != "approved" or gate["authorization"]["scope"] != contract["scope"]:
+    raise SystemExit("install gate is not approved for this package")
 if gate["identity"]["recordId"] != contract["identity"]["recordId"]:
     raise SystemExit("install identity mismatch")
 if enable["status"] != "approved":
