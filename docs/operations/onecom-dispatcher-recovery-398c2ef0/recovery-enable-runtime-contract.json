@@ -14,6 +14,6 @@
     "ASI_DISPATCHER_EXECUTE remains unchanged.",
     "The NO_RETRY file hash is unchanged and the sqlite spend ledger remains cap 0, paused 0, and paid call count 0."
   ],
-  "scope": "systemctl enable only for this exact recovery package",
+  "scope": "systemctl enable asi-ephemeral-dispatcher.service for the installed recovery package only. Do not start or restart the unit.",
   "taskCycle": "onecom-dispatcher-recovery-enable-398c2ef0-cycle-1"
 }

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "asi.agent-os.owner-gate.v1",
   "taskId": "onecom-dispatcher-recovery-enable-398c2ef0",
-  "status": "missing",
+  "status": "approved",
   "action": "repository_or_environment_settings_change",
   "target": "production",
   "identity": {
@@ -16,7 +16,12 @@
     "ASI_DISPATCHER_EXECUTE remains unchanged.",
     "The NO_RETRY file hash is unchanged and the sqlite spend ledger remains cap 0, paused 0, and paid call count 0."
   ],
-  "authorization": null,
+  "authorization": {
+    "source": "explicit_owner_message",
+    "owner": "Nikolay",
+    "scope": "systemctl enable asi-ephemeral-dispatcher.service for the installed recovery package only. Do not start or restart the unit.",
+    "taskCycle": "onecom-dispatcher-recovery-enable-398c2ef0-cycle-1"
+  },
   "typedConfirmation": {
     "present": false,
     "countsAsOwnerApproval": false

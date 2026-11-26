@@ -344,6 +344,8 @@ ASI_RECOVERY_DRY_ROOT="$DRY" ASI_RECOVERY_DRY_BIN="$BIN" \
   || { echo 'ENABLE_FAILED' >&2; cat "$STATE/enabled.err" >&2; exit 1; }
 grep -q RECOVERY_ENABLE_OK "$STATE/enabled.out"
 grep -q '^enable asi-ephemeral-dispatcher.service$' "$LOG"
+! grep -q '^start ' "$LOG"
+! grep -q '^restart ' "$LOG"
 install_gate=$SRC/../../docs/operations/onecom-dispatcher-recovery-398c2ef0/recovery-dropin-owner-gate.json
 install_contract=$SRC/../../docs/operations/onecom-dispatcher-recovery-398c2ef0/recovery-dropin-runtime-contract.json
 python3 - "$install_gate" "$install_contract" "$enable_gate" <<'PY'
@@ -351,8 +353,13 @@ import json, sys
 gate, contract, enable = (json.load(open(path, encoding="utf-8")) for path in sys.argv[1:4])
 if gate["status"] != "approved":
     raise SystemExit("install gate is not approved")
-if enable["status"] == "approved":
-    raise SystemExit("enable gate must stay unapproved")
+if enable["status"] != "approved":
+    raise SystemExit("enable gate is not approved")
+enable_contract = json.load(open(sys.argv[2].replace("recovery-dropin-runtime-contract.json", "recovery-enable-runtime-contract.json"), encoding="utf-8"))
+if enable["authorization"]["scope"] != enable_contract["scope"]:
+    raise SystemExit("enable scope mismatch")
+if "systemctl enable" not in enable["authorization"]["scope"] or "Do not start or restart" not in enable["authorization"]["scope"]:
+    raise SystemExit("enable scope is not bound")
 scope = gate["authorization"]["scope"]
 if scope != contract["scope"] or "systemctl start" not in scope or "Do not systemctl enable" not in scope:
     raise SystemExit("start is not bound in the install scope")
