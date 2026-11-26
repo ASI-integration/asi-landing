@@ -7,9 +7,9 @@
   "identity": {
     "ref": "refs/heads/main",
     "sha": "398c2ef0c2432aff8e841cc3f8075794c869a82a",
-    "recordId": "exact-sha=440155902f3f263eb8308ae96dbafdbb548cc55e;package-sha256=7e6561ed08e3904a67e89f93de5bbd084cad50b5f06599642afdbfcf8ac28082;scenario-sha256=ed39280b65b971d2fe89b147f5e44f94fb49a50399fa6c37b4faa463c548c411"
+    "recordId": "exact-sha=440155902f3f263eb8308ae96dbafdbb548cc55e;package-sha256=7e6561ed08e3904a67e89f93de5bbd084cad50b5f06599642afdbfcf8ac28082;scenario-sha256=1f80857c356067054671b855e4e24f131436a50c7fea5658adbaf3d892e568fc"
   },
-  "allowedSideEffect": "Run only systemctl enable asi-ephemeral-dispatcher.service for exact recovery commit 440155902f3f263eb8308ae96dbafdbb548cc55e package SHA256 7e6561ed08e3904a67e89f93de5bbd084cad50b5f06599642afdbfcf8ac28082 scenario SHA256 ed39280b65b971d2fe89b147f5e44f94fb49a50399fa6c37b4faa463c548c411 on protected main 398c2ef0c2432aff8e841cc3f8075794c869a82a. Do not start or restart the unit in this stage. Do not install files. Do not set ASI_DISPATCHER_EXECUTE. Do not widen the work directory. Do not clear NO_RETRY. Do not rebuild Gold. Do not change branch protection. Do not set ASI_PAID_CALLS_ENABLED. Do not change the spend cap. Do not remove HOLD from Issue #686.",
+  "allowedSideEffect": "Run only systemctl enable asi-ephemeral-dispatcher.service for exact recovery commit 440155902f3f263eb8308ae96dbafdbb548cc55e package SHA256 7e6561ed08e3904a67e89f93de5bbd084cad50b5f06599642afdbfcf8ac28082 scenario SHA256 1f80857c356067054671b855e4e24f131436a50c7fea5658adbaf3d892e568fc on protected main 398c2ef0c2432aff8e841cc3f8075794c869a82a. Do not start or restart the unit in this stage. Do not install files. Do not set ASI_DISPATCHER_EXECUTE. Do not widen the work directory. Do not clear NO_RETRY. Do not rebuild Gold. Do not change branch protection. Do not set ASI_PAID_CALLS_ENABLED. Do not change the spend cap. Do not remove HOLD from Issue #686.",
   "postActionVerification": [
     "systemctl is-enabled asi-ephemeral-dispatcher.service reports enabled.",
     "This stage does not start or restart the unit.",

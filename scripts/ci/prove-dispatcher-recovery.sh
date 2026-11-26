@@ -243,6 +243,7 @@ case "\$1" in
   is-active) printf '%s\n' inactive; exit 3 ;;
   is-enabled) printf '%s\n' disabled; exit 1 ;;
   start|restart) mkdir -p "$JDIR"; : > "$JDIR/started"; exit 0 ;;
+  show) printf '%s\n' '0123456789abcdef0123456789abcdef'; exit 0 ;;
   *) exit 0 ;;
 esac
 EOF
@@ -250,11 +251,22 @@ cat > "$BIN/journalctl" <<EOF
 #!/bin/sh
 printf '%s\n' "\$*" >> "$LOG"
 if printf '%s' "\$*" | grep -q -- --show-cursor; then
-  printf '%s\n' '-- cursor: s=test;i=1;b=test;'
+  # The unit journal is empty on a first start and has no cursor.
+  if printf '%s' "\$*" | grep -q -- '-u'; then
+    exit 0
+  fi
+  printf '%s\n' '-- cursor: s=system;i=1;b=boot;'
   exit 0
 fi
 if printf '%s' "\$*" | grep -q -- --after-cursor; then
-  if [ -f "$JDIR/started" ]; then printf '%s\n' RECOVER_OK; fi
+  printf '%s' "\$*" | grep -q -- '-u' || exit 0
+  printf '%s' "\$*" | grep -q -- 'asi-ephemeral-dispatcher.service' || exit 0
+  printf '%s' "\$*" | grep -q -- 's=system;i=1;b=boot;' || exit 0
+  if printf '%s' "\$*" | grep -q -- '_SYSTEMD_INVOCATION_ID=0123456789abcdef0123456789abcdef'; then
+    if [ -f "$JDIR/started" ] && [ ! -f "$JDIR/old-only" ]; then
+      printf '%s\n' RECOVER_OK
+    fi
+  fi
   exit 0
 fi
 printf '%s\n' 'OLD RECOVER_OK'
@@ -288,7 +300,25 @@ grep -q pidfd_send_signal "$DRY/usr/local/libexec/asi-ephemeral-dispatcher-recov
 grep -q '^daemon-reload$' "$LOG"
 grep -q '^start ' "$LOG"
 grep -q -- '--after-cursor' "$LOG"
+cursor_line=$(grep -- '--show-cursor' "$LOG")
+printf '%s\n' "$cursor_line" | grep -q -- '-u' && { echo 'EMPTY_JOURNAL_CURSOR' >&2; exit 1; }
+grep -- '--after-cursor' "$LOG" | grep -q -- '_SYSTEMD_INVOCATION_ID=0123456789abcdef0123456789abcdef' \
+  || { echo 'INVOCATION_FILTER' >&2; exit 1; }
+grep -- '--after-cursor' "$LOG" | grep -q -- 'asi-ephemeral-dispatcher.service' \
+  || { echo 'UNIT_FILTER' >&2; exit 1; }
 ! grep -q '^enable ' "$LOG"
+: > "$LOG"
+rm -f -- "$JDIR/started"
+: > "$JDIR/old-only"
+set +e
+ASI_RECOVERY_DRY_ROOT="$DRY" ASI_RECOVERY_DRY_BIN="$BIN" \
+  bash "$SRC/onecom-dispatcher-recovery.sh" install-and-verify >"$STATE/old.out" 2>"$STATE/old.err"
+old_rc=$?
+set -e
+[[ "$old_rc" -ne 0 ]] || { echo 'OLD_JOURNAL_ACCEPTED' >&2; exit 1; }
+grep -q 'BLOCKED: JOURNAL' "$STATE/old.err" || { echo 'OLD_JOURNAL_ACCEPTED' >&2; cat "$STATE/old.err" >&2; exit 1; }
+grep -q '^stop ' "$LOG"
+rm -f -- "$JDIR/old-only"
 [[ "$(cat "$DRY/no-retry.ids")" == 9 ]] || { echo 'SCENARIO_NO_RETRY' >&2; exit 1; }
 [[ "$(stat -c '%a' -- "$DRY/gold.qcow2")" == 444 ]] || { echo 'SCENARIO_GOLD' >&2; exit 1; }
 : > "$LOG"

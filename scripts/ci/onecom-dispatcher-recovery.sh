@@ -97,9 +97,13 @@ rollback_scenario() {
 }
 
 fresh_recover() {
-  local cursor=$1
-  local fresh
-  fresh=$(journalctl -u "$UNIT" --after-cursor "$cursor" -o cat --no-pager || true)
+  local cursor=$1 invocation fresh
+  invocation=$(systemctl show -p InvocationID --value -- "$UNIT" | tr -d '[:space:]' || true)
+  [[ "$invocation" =~ ^[0-9a-fA-F]{32}$ ]] || return 1
+  # Unit plus this start's InvocationID. An older RECOVER_OK, including one
+  # after the cursor but from another start, does not match.
+  fresh=$(journalctl -u "$UNIT" "_SYSTEMD_INVOCATION_ID=${invocation}" \
+    --after-cursor "$cursor" -o cat --no-pager || true)
   printf '%s\n' "$fresh" | grep -qx 'RECOVER_OK'
 }
 
@@ -140,7 +144,10 @@ case "$MODE" in
     systemctl is-active "$UNIT" > "$SNAP/unit-active" || true
     systemctl is-enabled "$UNIT" > "$SNAP/unit-enabled" || true
     was_active=$(tr -d '[:space:]' < "$SNAP/unit-active")
-    cursor=$(journalctl -u "$UNIT" -n 0 --show-cursor -o cat | awk -F': ' '/^-- cursor: / { print $2; exit }')
+    # A first start has an empty unit journal, so a unit-scoped cursor does not
+    # exist yet. Take the system journal cursor before start. Verification
+    # below still requires this unit and its new InvocationID.
+    cursor=$(journalctl -n 0 --show-cursor -o cat --no-pager | awk -F': ' '/^-- cursor: / { print $2; exit }' || true)
     [[ -n "${cursor:-}" ]] || { echo 'BLOCKED: JOURNAL' >&2; exit 1; }
     # --- STEP2 ---
     # Successful activation reloads and starts. Rollback is only the failure path.
