@@ -137,9 +137,11 @@ def verify_ticket(options):
     if ticket.get('selfhosted_workflow_sha256') != permit:
         fail('PERMIT_SHA')
     consumed = Path(options['consumed'])
-    if consumed.is_file() and not consumed.is_symlink():
-        if str(ticket.get('owner_release_nonce')) in consumed.read_text(encoding='utf-8').split():
-            fail('ATTESTATION_REUSED')
+    existing = consumed.read_text(encoding='utf-8') if consumed.is_file() and not consumed.is_symlink() else ''
+    nonce = str(ticket.get('owner_release_nonce'))
+    marker = f"view:{ticket.get('base_sha')}:{ticket.get('not_before')}"
+    if nonce in existing.split() or marker in existing.split():
+        fail('ATTESTATION_REUSED')
     if doc['monetaryBalanceKopecks'] < FLOOR:
         fail('INSUFFICIENT_FUNDS')
     return ticket
@@ -151,13 +153,20 @@ def consume_ticket(options):
         return
     ticket = json.loads(ticket_path.read_text(encoding='utf-8'))
     nonce = str(ticket.get('owner_release_nonce', ''))
+    marker = f"view:{ticket.get('base_sha')}:{ticket.get('not_before')}"
     if len(nonce) != 32:
         return
     consumed = Path(options['consumed'])
     consumed.parent.mkdir(mode=0o700, exist_ok=True)
     existing = consumed.read_text(encoding='utf-8') if consumed.is_file() else ''
-    if nonce not in existing.split():
-        consumed.write_text(existing + nonce + '\n', encoding='utf-8')
+    parts = existing.split()
+    extra = ''
+    if nonce not in parts:
+        extra += nonce + '\n'
+    if marker not in parts:
+        extra += marker + '\n'
+    if extra:
+        consumed.write_text(existing + extra, encoding='utf-8')
 
 
 def admit_start(options):
