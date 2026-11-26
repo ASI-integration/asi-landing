@@ -331,11 +331,14 @@ set -e
 grep -q ENABLE_UNAUTHORIZED "$STATE/enable.err"
 ! grep -q '^enable ' "$LOG"
 enable_gate=$SRC/../../docs/operations/onecom-dispatcher-recovery-398c2ef0/recovery-enable-owner-gate.json
-python3 - "$enable_gate" "$STATE/enable-gate.json" <<'PY'
+install_gate=$SRC/../../docs/operations/onecom-dispatcher-recovery-398c2ef0/recovery-dropin-owner-gate.json
+python3 - "$enable_gate" "$install_gate" "$STATE/enable-gate.json" <<'PY'
 import json, sys
 gate = json.load(open(sys.argv[1], encoding="utf-8"))
+install = json.load(open(sys.argv[2], encoding="utf-8"))
 gate["status"] = "approved"
-json.dump(gate, open(sys.argv[2], "w"))
+gate["identity"]["recordId"] = install["identity"]["recordId"]
+json.dump(gate, open(sys.argv[3], "w"))
 PY
 : > "$LOG"
 ASI_RECOVERY_DRY_ROOT="$DRY" ASI_RECOVERY_DRY_BIN="$BIN" \
@@ -367,5 +370,72 @@ if "systemctl start" not in gate["allowedSideEffect"] or "Do not systemctl enabl
     raise SystemExit("start is not bound in the allowed side effect")
 PY
 rm -rf -- "$DRY" "$BIN"
+
+stage systemd-ten-cycles
+command -v systemctl >/dev/null 2>&1 || { echo 'BLOCKED: SYSTEMD' >&2; exit 1; }
+id nobody >/dev/null 2>&1 || { echo 'BLOCKED: NOBODY' >&2; exit 1; }
+CYCLE=$(mktemp -d)
+install -d -m 0710 "$CYCLE/work"
+chown nobody:nogroup "$CYCLE/work"
+printf 'gold\n' > "$CYCLE/gold"
+chmod 0444 "$CYCLE/gold"
+: > "$CYCLE/lock"
+printf '9\n' > "$CYCLE/noretry"
+cat > "$CYCLE/mod.mjs" <<'EOF'
+const mode = process.argv[2];
+if (mode === 'recover-plan') {
+  process.stdout.write(JSON.stringify({action:'recover', rebuildGold:false, remove:[]}) + '\n');
+  process.exit(0);
+}
+process.exit(2);
+EOF
+cat > "$CYCLE/serve.sh" <<'EOF'
+#!/bin/bash
+printf '%s\n' '{"action":"idle","reason":"QUEUE_EMPTY","boot":false,"retry":false}'
+exit 0
+EOF
+chmod 0755 "$CYCLE/serve.sh"
+cat > /run/systemd/system/asi-recovery-cycles.service <<EOF
+[Unit]
+Description=ASI recovery ten-cycle acceptance
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=nobody
+Group=nogroup
+Environment=ASI_GOLD_IMAGE=$CYCLE/gold
+Environment=ASI_WORK_DIR=$CYCLE/work
+Environment=ASI_LOCK_FILE=$CYCLE/lock
+Environment=ASI_NO_RETRY_FILE=$CYCLE/noretry
+Environment=ASI_RECOVERY_USER=nobody
+Environment=ASI_DISPATCHER_MODULE=$CYCLE/mod.mjs
+Environment=ASI_NODE=$NODE
+Environment=ASI_DISPATCHER_EXECUTE=NO
+ExecStartPre=+$SRC/asi-ephemeral-dispatcher-recover.sh
+ExecStart=$CYCLE/serve.sh
+Restart=always
+RestartSec=1
+EOF
+cleanup_cycles() {
+  systemctl stop asi-recovery-cycles.service >/dev/null 2>&1 || true
+  rm -f /run/systemd/system/asi-recovery-cycles.service
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  rm -rf -- "$CYCLE"
+}
+systemctl daemon-reload
+systemctl reset-failed asi-recovery-cycles.service >/dev/null 2>&1 || true
+cycle_start=$(date '+%Y-%m-%d %H:%M:%S')
+systemctl start asi-recovery-cycles.service
+cycle_ok=0
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+  sleep 1
+  cycle_ok=$(journalctl -u asi-recovery-cycles.service --since "$cycle_start" -o cat --no-pager | grep -c '^RECOVER_OK$' || true)
+  [[ "$cycle_ok" -ge 10 ]] && break
+done
+cycle_left=$(journalctl -u asi-recovery-cycles.service --since "$cycle_start" --no-pager | grep -c 'left-over' || true)
+cleanup_cycles
+[[ "$cycle_ok" -ge 10 ]] || { echo 'CYCLE_COUNT' >&2; exit 1; }
+[[ "$cycle_left" -eq 0 ]] || { echo 'LEFTOVER_PYTHON' >&2; exit 1; }
 
 echo RECOVERY_HELPER_PROVED

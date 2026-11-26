@@ -357,20 +357,51 @@ if [[ ! -e "$lock" ]]; then
   lock_gid=$(getent group kvm | awk -F: 'NR==1 { print $3 }')
   [[ "$lock_uid" =~ ^[0-9]+$ && "$lock_gid" =~ ^[0-9]+$ ]] || { echo 'BLOCKED: LOCK_OWNER' >&2; exit 2; }
 fi
+# The lock holder is python itself, not a bash coproc subshell. A coproc's
+# PID is the subshell; killing that PID leaves python3 in the service cgroup,
+# and systemd 255 reports it as a left-over process on the next start.
+lock_dir=$(mktemp -d)
+mkfifo "$lock_dir/in" "$lock_dir/out"
+# O_RDWR so opening the fifo does not wait for the other end.
+exec {LOCK_IN}<>"$lock_dir/in" {LOCK_OUT}<>"$lock_dir/out"
+python3 -c 'import fcntl,sys
+for raw in sys.argv[1:]:
+    fcntl.fcntl(int(raw), fcntl.F_SETFD, fcntl.FD_CLOEXEC)
+' "$LOCK_IN" "$LOCK_OUT"
+python3 -c "$RECOVERY_ACT_PY" "$lock" "$wait_sec" "$lock_uid" "$lock_gid" <"$lock_dir/in" >"$lock_dir/out" &
+LOCK_PID=$!
 release_lock() {
-  if [[ -n "${LOCKHELD_PID:-}" ]]; then
-    local pid=$LOCKHELD_PID
-    LOCKHELD_PID=
-    kill -TERM "$pid" 2>/dev/null || true
+  local pid=${LOCK_PID:-}
+  LOCK_PID=
+  if [[ -n "$pid" ]]; then
+    if [[ -n "${LOCK_IN:-}" ]]; then
+      printf 'RELEASE\n' >&"$LOCK_IN" 2>/dev/null || true
+      exec {LOCK_IN}>&-
+      LOCK_IN=
+    fi
+    local _
+    for _ in 1 2 3 4 5; do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.05
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -TERM "$pid" 2>/dev/null || true
+    fi
+    local __
+    for __ in 1 2 3 4 5; do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 0.05
+    done
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
     wait "$pid" 2>/dev/null || true
   fi
+  [[ -z "${lock_dir:-}" ]] || rm -rf -- "$lock_dir"
 }
 trap release_lock EXIT
-coproc LOCKHELD {
-  python3 -c "$RECOVERY_ACT_PY" "$lock" "$wait_sec" "$lock_uid" "$lock_gid"
-}
 held=
-if ! IFS= read -r -t "$((wait_sec + 2))" held <&"${LOCKHELD[0]}"; then
+if ! IFS= read -r -t "$((wait_sec + 2))" held <&"$LOCK_OUT"; then
   release_lock
   exit 2
 fi
@@ -388,8 +419,8 @@ read -r tag lock_dev lock_ino <<<"$held"
 lock_stamp=$(stat -c '%u:%g:%a:%d:%i' -- "$lock")
 
 ask() {
-  printf '%s\n' "$1" >&"${LOCKHELD[1]}" || { echo 'BLOCKED: LOCK_OPEN' >&2; exit 2; }
-  if ! IFS= read -r -t 10 ASK_REPLY <&"${LOCKHELD[0]}"; then
+  printf '%s\n' "$1" >&"$LOCK_IN" || { echo 'BLOCKED: LOCK_OPEN' >&2; exit 2; }
+  if ! IFS= read -r -t 10 ASK_REPLY <&"$LOCK_OUT"; then
     echo 'BLOCKED: LOCK_OPEN' >&2
     exit 2
   fi
