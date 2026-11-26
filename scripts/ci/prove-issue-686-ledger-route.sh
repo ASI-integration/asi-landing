@@ -145,9 +145,20 @@ bash "$HERE/issue-686-one-shot.sh" --reset-only
 python3 - "$ROOT/crash.sqlite3" <<'PY'
 import sqlite3, sys
 with sqlite3.connect(sys.argv[1]) as db:
+    cap, paused, reason = db.execute('SELECT cap, paused, reason FROM policy WHERE id=1').fetchone()
+    actual, status = db.execute('SELECT actual, status FROM calls').fetchone()
+    count = db.execute('SELECT count(*) FROM calls').fetchone()[0]
+if (cap, paused, reason, count, actual, status) != (0, 1, 'UNKNOWN_OR_OVER_BUDGET_USAGE', 1, None, 'UNKNOWN_HELD'):
+    raise SystemExit('CRASH_LEDGER_NOT_HELD')
+PY
+printf 'ledger=%s\n' "$ROOT/crash.sqlite3" > "$ASI_ISSUE_686_STAMP"
+bash "$HERE/issue-686-one-shot.sh" --reset-only
+python3 - "$ROOT/crash.sqlite3" <<'PY'
+import sqlite3, sys
+with sqlite3.connect(sys.argv[1]) as db:
     cap, paused = db.execute('SELECT cap, paused FROM policy WHERE id=1').fetchone()
-    calls = db.execute('SELECT count(*) FROM calls').fetchone()[0]
-if (cap, paused, calls) != (0, 0, 0):
-    raise SystemExit('CRASH_LEDGER_NOT_RESTORED')
+    status = db.execute('SELECT status FROM calls').fetchone()[0]
+if (cap, paused, status) != (0, 1, 'UNKNOWN_HELD'):
+    raise SystemExit('RECONCILE_HOLD_LOST')
 PY
 echo ISSUE_686_LEDGER_ROUTE_PROVED

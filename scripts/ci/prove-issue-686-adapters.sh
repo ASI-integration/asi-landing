@@ -65,10 +65,13 @@ bash "$HERE/issue-686-one-shot.sh" --reset-only
 python3 - "$ASI_SPEND_LEDGER" <<'PY'
 import sqlite3, sys
 with sqlite3.connect(sys.argv[1]) as db:
-    cap, paused = db.execute('SELECT cap, paused FROM policy WHERE id=1').fetchone()
-    calls = db.execute('SELECT count(*) FROM calls').fetchone()[0]
-if (cap, paused, calls) != (0, 0, 0):
-    raise SystemExit('LEDGER_NOT_RESTORED')
+    cap, paused, reason = db.execute('SELECT cap, paused, reason FROM policy WHERE id=1').fetchone()
+    row = db.execute('SELECT actual, status FROM calls').fetchone()
+    count = db.execute('SELECT count(*) FROM calls').fetchone()[0]
+if (cap, paused, reason, count) != (0, 1, 'UNKNOWN_OR_OVER_BUDGET_USAGE', 1):
+    raise SystemExit('UNCERTAIN_LEDGER_NOT_HELD')
+if row != (None, 'UNKNOWN_HELD'):
+    raise SystemExit('UNKNOWN_HELD_NOT_PRESERVED')
 PY
 [[ ! -f "$ASI_ISSUE_686_STAMP" ]]
 set +e

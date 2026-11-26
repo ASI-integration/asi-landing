@@ -38,8 +38,24 @@ with sqlite3.connect(path.resolve().as_uri(), uri=True) as db:
     cols = [item[1] for item in db.execute("PRAGMA table_info(calls)").fetchall()]
     Path(receipt).parent.mkdir(parents=True, exist_ok=True)
     Path(receipt).write_text(json.dumps({"columns": cols, "rows": rows}), encoding="utf-8")
-    db.execute("DELETE FROM calls")
-    changed = db.execute("UPDATE policy SET cap=0, paused=0 WHERE id=1").rowcount
+    uncertain = db.execute(
+        "SELECT count(*) FROM calls WHERE status IN ('RESERVED_UNCERTAIN','UNKNOWN_HELD') OR actual IS NULL"
+    ).fetchone()[0]
+    if uncertain:
+        db.execute(
+            "UPDATE calls SET status='UNKNOWN_HELD' "
+            "WHERE status IN ('RESERVED_UNCERTAIN','UNKNOWN_HELD') OR actual IS NULL"
+        )
+        changed = db.execute(
+            "UPDATE policy SET cap=0, paused=1, reason='UNKNOWN_OR_OVER_BUDGET_USAGE', "
+            "changed=CAST(strftime('%s','now') AS INTEGER) WHERE id=1"
+        ).rowcount
+    else:
+        db.execute("DELETE FROM calls")
+        changed = db.execute(
+            "UPDATE policy SET cap=0, paused=0, reason='', "
+            "changed=CAST(strftime('%s','now') AS INTEGER) WHERE id=1"
+        ).rowcount
     db.commit()
 if changed != 1:
     raise SystemExit(1)
@@ -208,6 +224,8 @@ if [[ "$ATTESTED" == 1 ]]; then
   python3 "$ATTEST" admit-call --state /var/lib/asi/issue-686-attestation.json --effect CODEX
 fi
 run_adapter codex
+export ASI_ISSUE_686_PUBLISH=/var/lib/asi/issue-686-publish.json
+unset ASI_ISSUE_686_SIMULATE_EXTERNAL
 run_adapter local-ci
 if [[ "$ATTESTED" == 1 ]]; then
   python3 "$ATTEST" admit-call --state /var/lib/asi/issue-686-attestation.json --effect INDEPENDENT_REVIEW
