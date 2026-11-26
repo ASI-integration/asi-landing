@@ -46,6 +46,7 @@ case "\$2" in
   repos/ASI-integration/asi-landing/actions/workflows/agent-intake-triage.yml) echo '{"id":202,"name":"Agent Intake Triage","path":".github/workflows/agent-intake-triage.yml"}' ;;
   'repos/ASI-integration/asi-landing/actions/runs?status=queued&per_page=20') echo '{"workflow_runs":[{"id":51,"workflow_id":101,"event":"pull_request","head_sha":"$SHA","run_attempt":1,"head_repository":{"full_name":"ASI-integration/asi-landing"},"pull_requests":[{"number":688}]}]}' ;;
   'repos/ASI-integration/asi-landing/actions/runs?status=in_progress&per_page=20') echo '{"workflow_runs":[{"id":40,"workflow_id":101,"event":"pull_request","head_sha":"$SHA","run_attempt":1,"head_repository":{"full_name":"ASI-integration/asi-landing"},"pull_requests":[{"number":687}]}]}' ;;
+  'repos/ASI-integration/asi-landing/actions/runs?status=pending&per_page=20') echo '{"workflow_runs":[]}' ;;
   repos/ASI-integration/asi-landing/actions/runners?per_page=100) echo '{"total_count":0,"runners":[]}' ;;
   repos/ASI-integration/asi-landing/commits/main) echo '{"sha":"$MAIN"}' ;;
   repos/ASI-integration/asi-landing/actions/runs/40/jobs?per_page=100) echo '{"jobs":[{"id":7,"name":"source_validation","status":"queued","conclusion":null,"labels":["asi-40-1-source_validation"]}]}' ;;
@@ -215,6 +216,7 @@ fi
 grep -q LAUNCHER_STARTED "$STARTED_MARK"
 test "$(cat "$OUT")" = 7
 grep -q 'status=in_progress' "$GH_LOG"
+grep -q 'status=pending' "$GH_LOG"
 grep -q 'actions/runs/40/jobs' "$GH_LOG"
 if grep -q registration-token "$GH_LOG"; then echo 'token request' >&2; exit 1; fi
 set +e

@@ -161,16 +161,16 @@ export function pollQueue(api) {
       return deny('WORKFLOW_ID_UNVERIFIED');
     expected.set(workflow.id, {name, file});
   }
-  const queuedRuns = api.get(`repos/${REPO}/actions/runs?status=queued&per_page=20`);
-  const activeRuns = api.get(`repos/${REPO}/actions/runs?status=in_progress&per_page=20`);
-  if (!Array.isArray(queuedRuns?.workflow_runs) || !Array.isArray(activeRuns?.workflow_runs))
-    return deny('QUEUE_UNVERIFIED');
   const listed = {workflow_runs:[]};
   const seen = new Set();
-  for (const run of [...queuedRuns.workflow_runs, ...activeRuns.workflow_runs]) {
-    if (!run || !Number.isSafeInteger(run.id) || seen.has(run.id)) continue;
-    seen.add(run.id);
-    listed.workflow_runs.push(run);
+  for (const status of ['queued', 'in_progress', 'pending']) {
+    const page = api.get(`repos/${REPO}/actions/runs?status=${status}&per_page=20`);
+    if (!Array.isArray(page?.workflow_runs)) return deny('QUEUE_UNVERIFIED');
+    for (const run of page.workflow_runs) {
+      if (!run || !Number.isSafeInteger(run.id) || seen.has(run.id)) continue;
+      seen.add(run.id);
+      listed.workflow_runs.push(run);
+    }
   }
   const runners = api.get(`repos/${REPO}/actions/runners?per_page=100`);
   const main = api.get(`repos/${REPO}/commits/main`);

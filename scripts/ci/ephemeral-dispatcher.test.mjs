@@ -81,6 +81,7 @@ test('read-only github poll checks repo, workflow, head, owner, labels and job i
       id:40, workflow_id:101, event:'pull_request', head_sha:sha, run_attempt:1,
       head_repository:{full_name:'ASI-integration/asi-landing'}, pull_requests:[{number:687}],
     }]},
+    'repos/ASI-integration/asi-landing/actions/runs?status=pending&per_page=20': {workflow_runs:[]},
     'repos/ASI-integration/asi-landing/actions/runners?per_page=100': {total_count:1, runners:[{ephemeral:false, labels:['self-hosted','linux','x64']}]},
     'repos/ASI-integration/asi-landing/commits/main': {sha:'b'.repeat(40)},
     'repos/ASI-integration/asi-landing/actions/runs/40/jobs?per_page=100': {jobs:[job(7, {}, 40)]},
@@ -100,6 +101,26 @@ test('read-only github poll checks repo, workflow, head, owner, labels and job i
   assert.equal(selected.job.jobId, 7);
   assert.equal(selected.job.routeLabel, 'asi-40-1-source_validation');
   assert.equal(calls.includes('repos/ASI-integration/asi-landing/actions/runs?status=in_progress&per_page=20'), true);
+  assert.equal(calls.includes('repos/ASI-integration/asi-landing/actions/runs?status=pending&per_page=20'), true);
+  const pendingOnly = {
+    ...pages,
+    'repos/ASI-integration/asi-landing/actions/runs?status=queued&per_page=20': {workflow_runs:[]},
+    'repos/ASI-integration/asi-landing/actions/runs?status=in_progress&per_page=20': {workflow_runs:[]},
+    'repos/ASI-integration/asi-landing/actions/runs?status=pending&per_page=20': {workflow_runs:[{
+      id:60, workflow_id:101, event:'pull_request', head_sha:sha, run_attempt:1,
+      head_repository:{full_name:'ASI-integration/asi-landing'}, pull_requests:[{number:687}],
+    }]},
+    'repos/ASI-integration/asi-landing/actions/runs/60/jobs?per_page=100': {jobs:[
+      job(13, {}, 60),
+      job(14, {name:'validate', status:'waiting'}, 60),
+    ]},
+  };
+  const held = pollQueue({get(path) {
+    if (!(path in pendingOnly)) throw new Error(path);
+    return pendingOnly[path];
+  }});
+  assert.equal(selectJob(held.runs).job.jobId, 13);
+  assert.equal(selectJob([admitted({id:60, jobs:[job(14, {name:'validate', status:'pending'}, 60)]})]).boot, false);
   assert.equal(calls.some(path => path.includes('registration-token')), false);
   assert.equal(authorize({
     repository:'ASI-integration/asi-landing', jobId:7, runId:40, runAttempt:1, jobName:'source_validation',

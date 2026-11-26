@@ -43,6 +43,10 @@ pages = {
         '{"workflow_runs":[{"id":51}]}',
     'repos/ASI-integration/asi-landing/actions/runs?status=in_progress&per_page=20':
         '{"workflow_runs":[{"id":40}]}' if case != 'subset' else '{"workflow_runs":[{"id":40},{"id":41}]}',
+    'repos/ASI-integration/asi-landing/actions/runs?status=pending&per_page=20':
+        '{"workflow_runs":[{"id":42}]}' if case == 'pending' else '{"workflow_runs":[]}',
+    'repos/ASI-integration/asi-landing/actions/runs/42/jobs?per_page=100':
+        '{"jobs":[{"id":14,"name":"other","status":"queued","conclusion":null,"labels":["asi-40-1-source_validation"]}]}',
     'repos/ASI-integration/asi-landing/actions/runs/51/jobs?per_page=100':
         '{"jobs":[{"id":11,"name":"source_validation","status":"queued","conclusion":null,"labels":["self-hosted","linux","x64","asi-vps-onecom"]}]}',
     'repos/ASI-integration/asi-landing/actions/runs/41/jobs?per_page=100':
@@ -72,6 +76,7 @@ grep -q 'RUN_ONE_ADMITTED label=asi-40-1-source_validation job=7 work=/var/tmp/a
 if grep -q registration-token "$GH_LOG"; then echo 'token request' >&2; exit 1; fi
 grep -q 'pulls/687' "$GH_LOG"
 grep -q 'actions/runs/40' "$GH_LOG"
+grep -q 'status=pending' "$GH_LOG"
 
 export ASI_AUTHORIZED_JOB_ID=11
 : > "$GH_LOG"
@@ -103,6 +108,17 @@ set -e
 test "$subset" -ne 0
 if grep -q RUN_ONE_ADMITTED "$STATE/subset.out"; then echo 'subset route admitted' >&2; exit 1; fi
 grep -q FOREIGN_JOB_ROUTE "$STATE/subset.err"
+
+export GOLD_CASE=pending
+: > "$GH_LOG"
+set +e
+timeout 25 bash "$LAUNCHER" run-one >"$STATE/pending.out" 2>"$STATE/pending.err"
+pending=$?
+set -e
+test "$pending" -ne 0
+if grep -q RUN_ONE_ADMITTED "$STATE/pending.out"; then echo 'pending route admitted' >&2; exit 1; fi
+grep -q FOREIGN_JOB_ROUTE "$STATE/pending.err"
+grep -q 'status=pending' "$GH_LOG"
 
 MERGE=$(python3 -c 'print("c"*40)')
 cat > "$STATE/event.json" <<EOF

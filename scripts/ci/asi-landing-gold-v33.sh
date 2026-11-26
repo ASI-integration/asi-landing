@@ -122,7 +122,7 @@ if job_labels & (common | {'self-hosted'}):
 if job_labels != {route}:
     fail('ROUTE_MISMATCH')
 runner_labels = {route}
-for status in ('queued', 'in_progress'):
+for status in ('queued', 'in_progress', 'pending'):
     listed = gh(f'repos/{repo}/actions/runs?status={status}&per_page=20')
     for run in listed.get('workflow_runs') or []:
         if not isinstance(run.get('id'), int):
