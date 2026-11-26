@@ -87,8 +87,8 @@ def capture():
 
 
 def codex():
+    effect('codex')
     if no_spend():
-        effect('codex')
         print(json.dumps({'effect': 'CODEX', 'calls': 1}))
         return
     tick = load('candidate_codex_recovery', 'tick')
@@ -154,8 +154,8 @@ def local_ci():
 
 
 def review():
+    effect('review')
     if no_spend():
-        effect('review')
         print(json.dumps({'effect': 'INDEPENDENT_REVIEW', 'calls': 1}))
         return
     tick = load('candidate_review_dispatch', 'tick')

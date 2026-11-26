@@ -219,6 +219,10 @@ with sqlite3.connect(Path(ledger).resolve().as_uri(), uri=True) as db:
         raise SystemExit(1)
     db.commit()
 PY
+if [[ -z "${ASI_ISSUE_686_EFFECT_DIR:-}" ]]; then
+  export ASI_ISSUE_686_EFFECT_DIR=/var/lib/asi/issue-686-effects
+fi
+install -d -m 0700 "$ASI_ISSUE_686_EFFECT_DIR"
 run_adapter capture
 if [[ "$ATTESTED" == 1 ]]; then
   python3 "$ATTEST" admit-call --state /var/lib/asi/issue-686-attestation.json --effect CODEX

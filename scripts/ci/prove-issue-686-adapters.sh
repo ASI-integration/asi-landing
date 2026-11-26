@@ -53,6 +53,27 @@ replay=$(python3 "$HERE/issue-686-adapters.py" codex 2>&1)
 replay_status=$?
 set -e
 [[ "$replay_status" -eq 2 && "$replay" == 'BLOCKED: NO_REPLAY' ]]
+mkdir -p "$ROOT/fake-runtime" "$ROOT/live-effects"
+printf '%s\n' 'from pathlib import Path
+PATH = Path(__file__).with_suffix(".count")
+def tick(*_args, **_kwargs):
+    count = int(PATH.read_text()) if PATH.exists() else 0
+    PATH.write_text(str(count + 1))
+    return "ok"' > "$ROOT/fake-runtime/candidate_codex_recovery.py"
+cp "$ROOT/fake-runtime/candidate_codex_recovery.py" "$ROOT/fake-runtime/candidate_review_dispatch.py"
+export ASI_ISSUE_686_EFFECT_DIR=$ROOT/live-effects
+set +e
+first_live=$(ASI_ISSUE_686_NO_SPEND= ASI_RUNTIME_ROOT=$ROOT/fake-runtime python3 "$HERE/issue-686-adapters.py" codex 2>&1)
+first_status=$?
+second_live=$(ASI_ISSUE_686_NO_SPEND= ASI_RUNTIME_ROOT=$ROOT/fake-runtime python3 "$HERE/issue-686-adapters.py" codex 2>&1)
+second_status=$?
+set -e
+[[ "$first_status" -eq 0 && "$first_live" == *'"effect": "CODEX"'* ]]
+[[ "$second_status" -eq 2 && "$second_live" == 'BLOCKED: NO_REPLAY' ]]
+[[ "$(cat "$ROOT/fake-runtime/candidate_codex_recovery.count")" == 1 ]]
+export ASI_ISSUE_686_NO_SPEND=1
+export ASI_ISSUE_686_EFFECT_DIR=$ROOT/effects
+unset ASI_RUNTIME_ROOT
 python3 - "$ASI_SPEND_LEDGER" <<'PY'
 import sqlite3, sys
 with sqlite3.connect(sys.argv[1]) as db:
