@@ -88,10 +88,42 @@ export ASI_MODEL_EFFECTS=CODEX,INDEPENDENT_REVIEW
 export ASI_DISPATCHER_EXECUTE=NO
 export ASI_PAID_CALLS_ENABLED=NO
 export ASI_GLOBAL_CAP_KOPECKS=0
+if [[ -z "${GH_CONFIG_DIR:-}" && -d /home/administrator/.config/gh ]]; then
+  export GH_CONFIG_DIR=/home/administrator/.config/gh
+fi
 
 run_adapter() {
   python3 "$ADAPTER" "$1"
 }
+
+if [[ "${1:-}" == --preflight ]]; then
+  runtime=${ASI_RUNTIME_ROOT:-/home/administrator/asi-continuous}
+  for tool in gh git python3 openssl sqlite3; do
+    command -v "$tool" >/dev/null || fail "TOOL_${tool}"
+  done
+  [[ -n "${GH_CONFIG_DIR:-}" && -f "$GH_CONFIG_DIR/hosts.yml" ]] || fail GITHUB_AUTH
+  git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null || fail GIT_REPO
+  git -C "$REPO" ls-remote --exit-code origin refs/heads/agent/p1-686-dispatcher-recovery-audit >/dev/null || fail GIT_REMOTE
+  PYTHONPATH="$runtime" python3 - <<'PY' || fail GITHUB_ISSUE_READ_FAILED
+import issue_intake
+issue = issue_intake.fetch_issue_readonly()
+if issue.get("number") != 686 or "HOLD" not in str(issue.get("title") or ""):
+    raise SystemExit(1)
+print("ISSUE_READ", issue["number"])
+PY
+  perms=$(gh api repos/ASI-integration/asi-landing --jq '{pull:.permissions.pull,push:.permissions.push}')
+  [[ "$perms" == *'"pull":true'* ]] || fail GITHUB_REPO_PERMISSION
+  model=$(python3 "$runtime/check_models_readonly.py")
+  [[ "$model" == *"gpt-6-luna HTTP 200 MODEL_VISIBLE=YES"* ]] || fail MODEL_ENDPOINT
+  [[ "$model" == *"gpt-6.1-sol HTTP 200 MODEL_VISIBLE=YES"* ]] || fail MODEL_ENDPOINT
+  echo "CHECK github_api PASS"
+  echo "CHECK repo_permission PASS $perms"
+  echo "CHECK model_endpoint PASS"
+  echo "CHECK git_repo PASS"
+  echo "CHECK tools PASS gh git python3 openssl sqlite3"
+  echo PREFLIGHT_FREE_OK
+  exit 0
+fi
 
 if [[ "$NO_SPEND" == 1 ]]; then
   [[ -n "${ASI_ISSUE_686_EFFECT_DIR:-}" && -n "${ASI_SPEND_LEDGER:-}" ]] || fail ENV_MISSING
