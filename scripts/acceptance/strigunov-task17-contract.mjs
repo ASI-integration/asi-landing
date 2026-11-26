@@ -38,3 +38,36 @@ export function peers(a,b,host){
 }
 export function owned(expected,actual){if(!expected?.id||expected.id!==actual?.id||expected.name!==actual.name||expected.label!==actual.label||expected.image!==actual.image)fail('CLEANUP_IDENTITY');return true;}
 export function commitOutcome(ack){return ack==='COMMIT'?{status:'ACK',retry:false}:{status:'HOLD',retry:false};}
+
+// Read-only evidence validation, deliberately separate from synthetic lab admission.
+// References are supplied observations, not authenticated by this pure checker.
+const PHYSICAL_GATES = {
+ G2: ['effectiveAllowlists', 'sevenNoSendFlags', 'humanLogin'],
+ G3: ['historicalReconciliation', 'freshScope'],
+ G4: ['intakeDeduplication', 'crmCorrelation', 'cleaning', 'linen', 'supplies', 'readiness', 'unknownStateStop'],
+ G5: ['humanUi', 'unauthenticatedDenial', 'crossAccountDenial', 'getNoWrites', 'independentNoSend'],
+ G6: ['independentReview', 'ownerAcceptance'],
+};
+const evidenceText = value => typeof value === 'string' && value.trim().length > 0;
+
+export function physicalAcceptance(e) {
+ const scope = ['runId', 'sha', 'accountId', 'propertyId', 'eventId'];
+ if (!e || !scope.every(key => evidenceText(e[key])) || !/^[a-f0-9]{40}$/.test(e.sha)) fail('PHYSICAL_SCOPE');
+ if (e.environment !== 'staging' || e.synthetic !== true) fail('PHYSICAL_PILOT_ONLY');
+ if (!evidenceText(e.operatorId) || !evidenceText(e.ownerId) ||
+     !evidenceText(e.reviewerId) || e.reviewerId === e.operatorId || e.reviewerId === e.ownerId) fail('PHYSICAL_REVIEWER');
+ const completedGates = [];
+ for (const [gate, requirements] of Object.entries(PHYSICAL_GATES)) {
+  for (const requirement of requirements) {
+   const observation = e.gates?.[gate]?.[requirement];
+   if (!observation || observation.observed !== true || observation.kind !== 'physical' ||
+       !evidenceText(observation.source) || !scope.every(key => observation[key] === e[key])) fail(`PHYSICAL_${gate}_${requirement}`);
+   if ((requirement === 'independentReview' || requirement === 'independentNoSend') &&
+       observation.actorId !== e.reviewerId) fail('PHYSICAL_REVIEWER');
+   if (requirement === 'ownerAcceptance' && observation.actorId !== e.ownerId) fail('PHYSICAL_OWNER');
+  }
+  completedGates.push(gate);
+ }
+ // Even complete supplied evidence cannot grant owner authority or accept a release.
+ return { status: 'EVIDENCE_COMPLETE', completedGates, pilotOnly: true, releaseAccepted: false };
+}
