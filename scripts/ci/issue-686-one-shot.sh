@@ -153,22 +153,7 @@ fi
 gold_stamp=$(stat -c '%u:%g:%a:%i' -- "$ASI_GOLD_IMAGE")
 gold_size=$(qemu-img info -f qcow2 "$ASI_GOLD_IMAGE" | sed -n 's/.*(\([0-9][0-9]*\) bytes).*/\1/p' | head -n 1)
 [[ "$gold_size" == "$GOLD_BYTES" ]] || fail GOLD_CHANGED
-if ! python3 - "$ASI_SPEND_LEDGER" <<'PY'
-import sqlite3, sys
-from pathlib import Path
-path = Path(sys.argv[1])
-if path.is_symlink() or not path.is_file():
-    raise SystemExit(1)
-with sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True) as db:
-    row = db.execute('SELECT cap, paused FROM policy WHERE id=1').fetchone()
-    calls = db.execute('SELECT count(*) FROM calls').fetchone()[0]
-    columns = [item[1] for item in db.execute('PRAGMA table_info(calls)').fetchall()]
-if row is None or int(row[0]) != 0 or int(row[1]) != 0 or int(calls) != 0 or 'id' not in columns:
-    raise SystemExit(1)
-PY
-then
-  fail LEDGER
-fi
+python3 "$ATTEST" ledger-zero --ledger "$ASI_SPEND_LEDGER"
 
 if [[ "$NEED_ATTEST" == 1 ]]; then
   exact_sha=$(git -C "$REPO" rev-parse HEAD)

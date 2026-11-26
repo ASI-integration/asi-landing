@@ -21,9 +21,14 @@ mkdir -p "$ASI_ISSUE_686_EFFECT_DIR"
 python3 - "$ASI_SPEND_LEDGER" <<'PY'
 import sqlite3, sys
 with sqlite3.connect(sys.argv[1]) as db:
-    db.execute('CREATE TABLE policy (id INTEGER PRIMARY KEY, cap INTEGER, paused INTEGER)')
-    db.execute('CREATE TABLE calls (id INTEGER PRIMARY KEY)')
-    db.execute('INSERT INTO policy (id, cap, paused) VALUES (1, 0, 0)')
+    db.execute('''CREATE TABLE policy (
+        id INTEGER PRIMARY KEY, cap INTEGER, paused INTEGER,
+        reason TEXT NOT NULL DEFAULT '', changed INTEGER NOT NULL DEFAULT 0)''')
+    db.execute('''CREATE TABLE calls (
+        operation TEXT NOT NULL, phase TEXT NOT NULL, created INTEGER NOT NULL,
+        reserved INTEGER NOT NULL, actual INTEGER, status TEXT NOT NULL,
+        PRIMARY KEY(operation, phase))''')
+    db.execute('INSERT INTO policy (id, cap, paused, changed) VALUES (1, 0, 0, 0)')
     db.commit()
 PY
 set +e
@@ -52,7 +57,7 @@ python3 - "$ASI_SPEND_LEDGER" <<'PY'
 import sqlite3, sys
 with sqlite3.connect(sys.argv[1]) as db:
     db.execute('UPDATE policy SET cap=6400 WHERE id=1')
-    db.execute('INSERT INTO calls (id) VALUES (1)')
+    db.execute("INSERT INTO calls(operation,phase,created,reserved,actual,status) VALUES('asi-t','CODEX',1,3200,NULL,'RESERVED_UNCERTAIN')")
     db.commit()
 PY
 printf 'ledger=%s\n' "$ASI_SPEND_LEDGER" > "$ASI_ISSUE_686_STAMP"

@@ -18,6 +18,9 @@ CALL_MAX = 3200
 WINDOW = 600
 EFFECTS = ('CODEX', 'INDEPENDENT_REVIEW')
 PUBLIC_KEY = '/etc/asi/p1-686-owner-public.pem'
+CALL_COLUMNS = ('operation', 'phase', 'created', 'reserved', 'actual', 'status')
+USED_OBSERVATION = 1795710953
+KNOWN_CHARGE = ('SETTLED', 'INCLUDED_ADMITTED')
 
 
 def fail(code):
@@ -61,6 +64,8 @@ def attestation(path):
         fail('ATTESTATION_AMOUNT')
     if type(doc.get('observedAt')) is not int:
         fail('ATTESTATION_EXPIRED')
+    if doc['observedAt'] == USED_OBSERVATION:
+        fail('ATTESTATION_REUSED')
     if not isinstance(doc.get('exactSha'), str) or not doc['exactSha']:
         fail('ATTESTATION_SHA')
     return doc
@@ -81,14 +86,25 @@ def gate_ok(path, attestation_sha):
     return doc
 
 
-def ledger_zero(path):
+def ledger_connection(path):
     file_path = Path(path)
     if not file_path.is_file() or file_path.is_symlink():
         fail('LEDGER')
-    with sqlite3.connect(file_path.resolve().as_uri() + '?mode=ro', uri=True) as db:
+    db = sqlite3.connect(file_path.resolve().as_uri() + '?mode=ro', uri=True)
+    columns = tuple(item[1] for item in db.execute('PRAGMA table_info(calls)').fetchall())
+    if columns != CALL_COLUMNS:
+        db.close()
+        fail('LEDGER')
+    return db
+
+
+def ledger_zero(path):
+    with ledger_connection(path) as db:
         row = db.execute('SELECT cap, paused FROM policy WHERE id=1').fetchone()
         calls = db.execute('SELECT count(*) FROM calls').fetchone()[0]
-    if row is None or int(row[0]) != 0 or int(row[1]) != 0 or int(calls) != 0:
+    if row is None:
+        fail('LEDGER')
+    if int(row[0]) != 0 or int(row[1]) != 0 or int(calls) != 0:
         fail('PARALLEL_PAID')
 
 
@@ -229,11 +245,16 @@ def observed_charges(ledger):
     if not file_path.is_file() or file_path.is_symlink():
         return None
     with sqlite3.connect(file_path.resolve().as_uri() + '?mode=ro', uri=True) as db:
-        columns = [item[1] for item in db.execute('PRAGMA table_info(calls)').fetchall()]
-        known = [name for name in ('kopecks', 'cost_kopecks', 'amount_kopecks', 'charge_kopecks') if name in columns]
-        if len(known) != 1:
+        columns = tuple(item[1] for item in db.execute('PRAGMA table_info(calls)').fetchall())
+        if columns != CALL_COLUMNS:
             return None
-        return [row[0] for row in db.execute(f'SELECT {known[0]} FROM calls ORDER BY id')]
+        rows = db.execute('SELECT actual, status FROM calls').fetchall()
+    values = []
+    for actual, status in rows:
+        if status not in KNOWN_CHARGE or type(actual) is not int or actual < 0:
+            return None
+        values.append(actual)
+    return values
 
 
 def reconcile(options):
@@ -241,15 +262,14 @@ def reconcile(options):
     if state is None or state.get('consumed') or state.get('unknown'):
         fail('ATTESTATION_REUSED')
     values = observed_charges(options['ledger'])
-    uncertain = (
-        values is None
-        or len(values) != len(state['reserved'])
-        or any(type(value) is not int or value < 0 or value > CALL_MAX for value in values)
-    )
-    if uncertain or sum(values) > BUDGET:
+    if values is None or len(values) != len(state['reserved']):
         state['unknown'] = True
         write_state(options, state)
         fail('UNKNOWN_CHARGE_STOP')
+    if sum(values) > BUDGET:
+        state['unknown'] = True
+        write_state(options, state)
+        fail('BUDGET')
     state['consumed'] = True
     state['actualKopecks'] = sum(values)
     write_state(options, state)
@@ -270,6 +290,9 @@ def main():
         print('OWNER_TICKET_VERIFIED')
     elif command == 'consume-ticket':
         consume_ticket(options)
+    elif command == 'ledger-zero':
+        ledger_zero(options['ledger'])
+        print('LEDGER_ZERO')
     elif command == 'admit-start':
         admit_start(options)
     elif command == 'admit-call':

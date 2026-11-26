@@ -20,9 +20,15 @@ EOF
 python3 - "$ROOT/ledger.sqlite3" <<'PY'
 import sqlite3, sys
 with sqlite3.connect(sys.argv[1]) as db:
-    db.execute('CREATE TABLE policy (id INTEGER PRIMARY KEY, cap INTEGER, paused INTEGER)')
-    db.execute('CREATE TABLE calls (id INTEGER PRIMARY KEY)')
-    db.execute('INSERT INTO policy (id, cap, paused) VALUES (1, 0, 0)')
+    db.execute('''CREATE TABLE policy (
+        id INTEGER PRIMARY KEY CHECK(id=1), cap INTEGER NOT NULL,
+        paused INTEGER NOT NULL DEFAULT 0, reason TEXT NOT NULL DEFAULT '',
+        changed INTEGER NOT NULL)''')
+    db.execute('''CREATE TABLE calls (
+        operation TEXT NOT NULL, phase TEXT NOT NULL, created INTEGER NOT NULL,
+        reserved INTEGER NOT NULL, actual INTEGER, status TEXT NOT NULL,
+        PRIMARY KEY(operation, phase))''')
+    db.execute("INSERT INTO policy (id, cap, paused, changed) VALUES (1, 0, 0, 0)")
     db.commit()
 PY
 common=(--attestation "$ROOT/attestation.json" --gate "$ROOT/gate.json" --ledger "$ROOT/ledger.sqlite3" --state "$ROOT/state.json" --attestation-sha256 "$SHA" --exact-sha abc123 --paid NO --execute NO --now "$NOW")
@@ -40,8 +46,8 @@ set -e
 python3 - "$ROOT/ledger.sqlite3" <<'PY'
 import sqlite3, sys
 with sqlite3.connect(sys.argv[1]) as db:
-    db.execute('ALTER TABLE calls ADD COLUMN kopecks INTEGER')
-    db.execute('INSERT INTO calls (id, kopecks) VALUES (1, 0), (2, 0)')
+    db.execute("INSERT INTO calls(operation,phase,created,reserved,actual,status) VALUES('asi-t','CODEX',1,3200,0,'SETTLED')")
+    db.execute("INSERT INTO calls(operation,phase,created,reserved,actual,status) VALUES('asi-t','INDEPENDENT_REVIEW',1,3200,0,'SETTLED')")
     db.commit()
 PY
 python3 "$HERE/owner-attested-balance.py" reconcile "${common[@]}" --ledger "$ROOT/ledger.sqlite3" >/dev/null
@@ -79,7 +85,7 @@ set -e
 python3 - "$ROOT/ledger.sqlite3" "$ROOT/attestation.json" <<'PY'
 import json, sqlite3, sys
 with sqlite3.connect(sys.argv[1]) as db:
-    db.execute('INSERT INTO calls (id) VALUES (3)')
+    db.execute("INSERT INTO calls(operation,phase,created,reserved,actual,status) VALUES('asi-parallel','CODEX',2,3200,NULL,'RESERVED_UNCERTAIN')")
     db.commit()
 path = sys.argv[2]
 doc = json.load(open(path, encoding='utf-8'))
