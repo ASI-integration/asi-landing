@@ -93,6 +93,15 @@ if [[ "$NO_SPEND" == 1 ]]; then
   exit 0
 fi
 
+TICKET_DIR=${ASI_ISSUE_686_TICKET_DIR:-/var/lib/asi/issue-686-launch}
+cleanup_authorization() {
+  python3 "$ATTEST" consume-ticket --ticket "$TICKET_DIR/owner_ticket.json" --consumed "$TICKET_DIR/consumed" || true
+  rm -f -- "$TICKET_DIR/owner_ticket.sig" "$TICKET_DIR/owner_ticket.json" "$TICKET_DIR/payload"
+}
+[[ -f "$TICKET_DIR/owner_ticket.json" && -f "$TICKET_DIR/owner_ticket.sig" && ! -L "$TICKET_DIR/owner_ticket.json" && ! -L "$TICKET_DIR/owner_ticket.sig" ]] || fail GATE_MISSING
+exact_sha=$(git -C "$REPO" rev-parse HEAD)
+python3 "$ATTEST" verify-ticket --runtime "$ASI_RUNTIME_ROOT" --ticket "$TICKET_DIR/owner_ticket.json" --signature "$TICKET_DIR/owner_ticket.sig" --public-key /etc/asi/p1-686-owner-public.pem --attestation "${ASI_OWNER_ATTESTED_BALANCE:-/etc/asi/owner-attested-balance.json}" --exact-sha "$exact_sha" --permit "$HERE/issue-686-one-shot.sh" --consumed "$TICKET_DIR/consumed"
+trap cleanup_authorization EXIT
 reason=$(python3 - "$GATE" "$CONTRACT" "$HERE/issue-686-one-shot.sh" "$ADAPTER" "$ENV_FILE" "$UNIT" "$SERVICE" "$ATTEST" <<'PY'
 import hashlib, json, sys
 gate, contract, script, adapter, env_file, unit, service, attest = sys.argv[1:]
@@ -102,18 +111,8 @@ try:
 except Exception:
     print('GATE_MISSING')
     raise SystemExit(1)
-if gate_doc.get('status') != 'approved' or not isinstance(gate_doc.get('authorization'), dict):
-    print('GATE_MISSING')
-    raise SystemExit(1)
-auth = gate_doc['authorization']
-if auth.get('source') != 'explicit_owner_message' or auth.get('owner') != 'Nikolay':
-    print('GATE_SCOPE')
-    raise SystemExit(1)
-if auth.get('scope') != contract_doc.get('scope') or auth.get('taskCycle') != contract_doc.get('taskCycle'):
-    print('GATE_SCOPE')
-    raise SystemExit(1)
-if gate_doc.get('allowedSideEffect') != contract_doc.get('allowedSideEffect'):
-    print('GATE_SCOPE')
+if gate_doc.get('identity') != contract_doc.get('identity'):
+    print('PERMIT_SHA')
     raise SystemExit(1)
 rec = dict(part.split('=', 1) for part in gate_doc['identity']['recordId'].split(';'))
 checks = {
@@ -178,7 +177,7 @@ import hashlib, sys
 print(hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest())
 PY
 )
-  python3 "$ATTEST" admit-start --attestation "${ASI_OWNER_ATTESTED_BALANCE:-/etc/asi/owner-attested-balance.json}" --gate "$GATE" --ledger "$ASI_SPEND_LEDGER" --state /var/lib/asi/issue-686-attestation.json --attestation-sha256 "$attest_sha" --exact-sha "$exact_sha" --paid "$ASI_PAID_CALLS_ENABLED" --execute "$ASI_DISPATCHER_EXECUTE"
+  python3 "$ATTEST" admit-start --attestation "${ASI_OWNER_ATTESTED_BALANCE:-/etc/asi/owner-attested-balance.json}" --gate "$GATE" --ledger "$ASI_SPEND_LEDGER" --state /var/lib/asi/issue-686-attestation.json --attestation-sha256 "$attest_sha" --exact-sha "$exact_sha" --paid "$ASI_PAID_CALLS_ENABLED" --execute "$ASI_DISPATCHER_EXECUTE" --runtime "$ASI_RUNTIME_ROOT" --ticket "$TICKET_DIR/owner_ticket.json" --signature "$TICKET_DIR/owner_ticket.sig" --public-key /etc/asi/p1-686-owner-public.pem --permit "$HERE/issue-686-one-shot.sh" --consumed "$TICKET_DIR/consumed"
   ATTESTED=1
 fi
 
@@ -186,6 +185,7 @@ stamp=/var/lib/asi/issue-686-permit.stamp
 restore_budget() {
   local status=$?
   set +e
+  cleanup_authorization
   if [[ -f "$stamp" ]]; then
     reset_ledger "$ASI_SPEND_LEDGER"
     if [[ $? -eq 0 ]]; then

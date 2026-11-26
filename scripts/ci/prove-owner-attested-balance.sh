@@ -12,7 +12,7 @@ PY
 )
 NOW=1700000000
 cat > "$ROOT/attestation.json" <<EOF
-{"kind":"OWNER_ATTESTED_BALANCE","source":"owner_cabinet","apiBalance":false,"issue":686,"worker":5,"budgetKopecks":6400,"reserveKopecks":3200,"monetaryBalanceKopecks":9600,"grantBonusKopecks":500000,"observedAt":$NOW,"exactSha":"abc123"}
+{"kind":"OWNER_ATTESTED_BALANCE","source":"owner_cabinet","apiBalance":false,"issue":686,"worker":5,"budgetKopecks":6400,"reserveKopecks":3200,"monetaryBalanceKopecks":81533,"grantBonusKopecks":500000,"observedAt":$NOW,"exactSha":"abc123"}
 EOF
 cat > "$ROOT/gate.json" <<EOF
 {"status":"approved","authorization":{"source":"explicit_owner_message","owner":"Nikolay","scope":"OWNER_ATTESTED_BALANCE"},"identity":{"recordId":"attestation-sha256=$SHA"}}
@@ -68,7 +68,7 @@ import json, sys
 path = sys.argv[1]
 doc = json.load(open(path, encoding='utf-8'))
 doc['observedAt'] += 601
-doc['monetaryBalanceKopecks'] = 6400
+doc['monetaryBalanceKopecks'] = 81532
 json.dump(doc, open(path, 'w', encoding='utf-8'))
 PY
 set +e
@@ -83,7 +83,7 @@ with sqlite3.connect(sys.argv[1]) as db:
     db.commit()
 path = sys.argv[2]
 doc = json.load(open(path, encoding='utf-8'))
-doc['monetaryBalanceKopecks'] = 9600
+doc['monetaryBalanceKopecks'] = 81533
 json.dump(doc, open(path, 'w', encoding='utf-8'))
 PY
 set +e

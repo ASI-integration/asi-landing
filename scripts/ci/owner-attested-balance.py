@@ -4,6 +4,7 @@
 This is not a Cloud.ru balance API result. Grant bonuses are recorded and
 are never added to the monetary remainder.
 """
+import hashlib
 import json
 import sqlite3
 import sys
@@ -12,9 +13,11 @@ from pathlib import Path
 
 BUDGET = 6400
 RESERVE = 3200
+FLOOR = 81533
 CALL_MAX = 3200
 WINDOW = 600
 EFFECTS = ('CODEX', 'INDEPENDENT_REVIEW')
+PUBLIC_KEY = '/etc/asi/p1-686-owner-public.pem'
 
 
 def fail(code):
@@ -108,16 +111,68 @@ def write_state(options, doc):
     path.write_text(json.dumps(doc), encoding='utf-8')
 
 
+def verify_ticket(options):
+    ticket_path = Path(options['ticket'])
+    signature_path = Path(options['signature'])
+    if (not ticket_path.is_file() or ticket_path.is_symlink()
+            or not signature_path.is_file() or signature_path.is_symlink()):
+        fail('GATE_MISSING')
+    runtime = Path(options['runtime'])
+    sys.path.insert(0, str(runtime))
+    import issue_intake
+    ticket = json.loads(ticket_path.read_text(encoding='utf-8'))
+    signature = signature_path.read_bytes()
+    try:
+        issue_intake.verify_signed_owner_ticket(
+            ticket, signature, Path(options.get('public-key', PUBLIC_KEY)))
+    except Exception as exc:
+        code = str(exc).strip() or 'OWNER_SIGNATURE_REJECTED'
+        fail(code)
+    doc = attestation(options['attestation'])
+    if ticket.get('base_sha') != options['exact-sha'] or doc['exactSha'] != options['exact-sha']:
+        fail('ATTESTATION_SHA')
+    if ticket.get('not_before') != doc['observedAt'] or ticket.get('expires_at') != doc['observedAt'] + WINDOW:
+        fail('ATTESTATION_EXPIRED')
+    permit = hashlib.sha256(Path(options['permit']).read_bytes()).hexdigest()
+    if ticket.get('selfhosted_workflow_sha256') != permit:
+        fail('PERMIT_SHA')
+    consumed = Path(options['consumed'])
+    if consumed.is_file() and not consumed.is_symlink():
+        if str(ticket.get('owner_release_nonce')) in consumed.read_text(encoding='utf-8').split():
+            fail('ATTESTATION_REUSED')
+    if doc['monetaryBalanceKopecks'] < FLOOR:
+        fail('INSUFFICIENT_FUNDS')
+    return ticket
+
+
+def consume_ticket(options):
+    ticket_path = Path(options['ticket'])
+    if not ticket_path.is_file() or ticket_path.is_symlink():
+        return
+    ticket = json.loads(ticket_path.read_text(encoding='utf-8'))
+    nonce = str(ticket.get('owner_release_nonce', ''))
+    if len(nonce) != 32:
+        return
+    consumed = Path(options['consumed'])
+    consumed.parent.mkdir(mode=0o700, exist_ok=True)
+    existing = consumed.read_text(encoding='utf-8') if consumed.is_file() else ''
+    if nonce not in existing.split():
+        consumed.write_text(existing + nonce + '\n', encoding='utf-8')
+
+
 def admit_start(options):
     doc = attestation(options['attestation'])
-    gate_ok(options['gate'], options['attestation-sha256'])
+    if options.get('ticket'):
+        verify_ticket(options)
+    else:
+        gate_ok(options['gate'], options['attestation-sha256'])
     now = int(options.get('now', int(time.time())))
     age = now - doc['observedAt']
     if age < 0 or age > WINDOW:
         fail('ATTESTATION_EXPIRED')
     if doc['exactSha'] != options['exact-sha']:
         fail('ATTESTATION_SHA')
-    if doc['monetaryBalanceKopecks'] < BUDGET + RESERVE:
+    if doc['monetaryBalanceKopecks'] < FLOOR or doc['monetaryBalanceKopecks'] < BUDGET + RESERVE:
         fail('INSUFFICIENT_FUNDS')
     if read_state(options) is not None:
         fail('ATTESTATION_REUSED')
@@ -201,7 +256,12 @@ def main():
         fail('ATTESTATION_MISSING')
     command = sys.argv[1]
     options = args(sys.argv[2:])
-    if command == 'admit-start':
+    if command == 'verify-ticket':
+        verify_ticket(options)
+        print('OWNER_TICKET_VERIFIED')
+    elif command == 'consume-ticket':
+        consume_ticket(options)
+    elif command == 'admit-start':
         admit_start(options)
     elif command == 'admit-call':
         admit_call(options)
