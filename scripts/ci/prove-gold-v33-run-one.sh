@@ -24,6 +24,8 @@ open(os.environ['GH_LOG'], 'a', encoding='ascii').write(path + '\n')
 if '-X' in path or 'registration-token' in path:
     sys.exit(2)
 sha = os.environ['SHA']
+base = 'b' * 40
+merge = 'c' * 40
 case = os.environ.get('GOLD_CASE', 'ok')
 labels = ['asi-40-1-source_validation']
 if case == 'common':
@@ -34,7 +36,13 @@ if case == 'subset':
 jobs = '{"jobs":[{"id":7,"name":"source_validation","status":"queued","conclusion":null,"labels":%s}%s]}' % (
     __import__('json').dumps(labels), extra)
 pages = {
-    'repos/ASI-integration/asi-landing/pulls/687': '{"head":{"sha":"%s"}}' % sha,
+    'repos/ASI-integration/asi-landing/pulls/687':
+        '{"head":{"sha":"%s"},"base":{"ref":"main","sha":"%s"}}' % (sha, base),
+    'repos/ASI-integration/asi-landing/commits/main': '{"sha":"%s"}' % base,
+    'repos/ASI-integration/asi-landing/git/ref/pull/687/merge':
+        '{"object":{"type":"commit","sha":"%s"}}' % merge,
+    'repos/ASI-integration/asi-landing/commits/%s' % merge:
+        '{"sha":"%s","parents":[{"sha":"%s"},{"sha":"%s"}]}' % (merge, base, sha),
     'repos/ASI-integration/asi-landing/issues/687/comments?per_page=100&page=1':
         '[{"user":{"id":207600140,"type":"User"},"author_association":"OWNER","performed_via_github_app":null,"body":"ASI-OWNER-APPROVE:CONTRACT-CHANGE:687:%s"}]' % sha,
     'repos/ASI-integration/asi-landing/actions/runs/40': '{"head_sha":"%s","run_attempt":1}' % sha,
@@ -77,6 +85,7 @@ if grep -q registration-token "$GH_LOG"; then echo 'token request' >&2; exit 1; 
 grep -q 'pulls/687' "$GH_LOG"
 grep -q 'actions/runs/40' "$GH_LOG"
 grep -q 'status=pending' "$GH_LOG"
+grep -q 'git/ref/pull/687/merge' "$GH_LOG"
 
 export ASI_AUTHORIZED_JOB_ID=11
 : > "$GH_LOG"
@@ -140,15 +149,24 @@ grep -q 'ASI_HOOK_EXEC_AS_RUNNER user=' "$STATE/exec.out"
 if [[ "$(id -u)" -eq 0 ]]; then
   grep -q 'user=asi-route-hook' "$STATE/exec.out"
 fi
-"${run_as[@]}" env ASI_EXPECT_RUN_ID=40 ASI_EXPECT_RUN_ATTEMPT=1 ASI_EXPECT_JOB_NAME=source_validation ASI_EXPECT_HEAD="$SHA" \
+"${run_as[@]}" env ASI_EXPECT_RUN_ID=40 ASI_EXPECT_RUN_ATTEMPT=1 ASI_EXPECT_JOB_NAME=source_validation ASI_EXPECT_HEAD="$SHA" ASI_EXPECT_MERGE="$MERGE" \
   GITHUB_RUN_ID=40 GITHUB_RUN_ATTEMPT=1 GITHUB_JOB=source_validation GITHUB_EVENT_NAME=pull_request \
   GITHUB_EVENT_PATH="$STATE/event.json" GITHUB_SHA="$MERGE" \
   "$STATE/hook-launcher" run-one-hook >"$STATE/hook.out"
 grep -q 'ASI_ASSIGNED_JOB_MATCH user=' "$STATE/hook.out"
-set +e
-"${run_as[@]}" env ASI_EXPECT_RUN_ID=40 ASI_EXPECT_RUN_ATTEMPT=1 ASI_EXPECT_JOB_NAME=source_validation ASI_EXPECT_HEAD="$SHA" \
+STALE=$(python3 -c 'print("d"*40)')
+cat > "$STATE/event.json" <<EOF
+{"pull_request":{"head":{"sha":"$SHA"},"merge_commit_sha":"$STALE"}}
+EOF
+"${run_as[@]}" env ASI_EXPECT_RUN_ID=40 ASI_EXPECT_RUN_ATTEMPT=1 ASI_EXPECT_JOB_NAME=source_validation ASI_EXPECT_HEAD="$SHA" ASI_EXPECT_MERGE="$MERGE" \
   GITHUB_RUN_ID=40 GITHUB_RUN_ATTEMPT=1 GITHUB_JOB=source_validation GITHUB_EVENT_NAME=pull_request \
-  GITHUB_EVENT_PATH="$STATE/event.json" GITHUB_SHA="$SHA" \
+  GITHUB_EVENT_PATH="$STATE/event.json" GITHUB_SHA="$MERGE" \
+  "$STATE/hook-launcher" run-one-hook >"$STATE/hook-stale.out"
+grep -q 'ASI_ASSIGNED_JOB_MATCH user=' "$STATE/hook-stale.out"
+set +e
+"${run_as[@]}" env ASI_EXPECT_RUN_ID=40 ASI_EXPECT_RUN_ATTEMPT=1 ASI_EXPECT_JOB_NAME=source_validation ASI_EXPECT_HEAD="$SHA" ASI_EXPECT_MERGE="$MERGE" \
+  GITHUB_RUN_ID=40 GITHUB_RUN_ATTEMPT=1 GITHUB_JOB=source_validation GITHUB_EVENT_NAME=pull_request \
+  GITHUB_EVENT_PATH="$STATE/event.json" GITHUB_SHA="$STALE" \
   "$STATE/hook-launcher" run-one-hook >"$STATE/hook-bad.out" 2>"$STATE/hook-bad.err"
 hook=$?
 set -e
@@ -158,7 +176,7 @@ cat > "$STATE/event.json" <<EOF
 {"pull_request":{"head":{"sha":"$SHA"},"merge_commit_sha":"$SHA"}}
 EOF
 set +e
-"${run_as[@]}" env ASI_EXPECT_RUN_ID=40 ASI_EXPECT_RUN_ATTEMPT=1 ASI_EXPECT_JOB_NAME=source_validation ASI_EXPECT_HEAD="$SHA" \
+"${run_as[@]}" env ASI_EXPECT_RUN_ID=40 ASI_EXPECT_RUN_ATTEMPT=1 ASI_EXPECT_JOB_NAME=source_validation ASI_EXPECT_HEAD="$SHA" ASI_EXPECT_MERGE="$MERGE" \
   GITHUB_RUN_ID=40 GITHUB_RUN_ATTEMPT=1 GITHUB_JOB=source_validation GITHUB_EVENT_NAME=pull_request \
   GITHUB_EVENT_PATH="$STATE/event.json" GITHUB_SHA="$SHA" \
   "$STATE/hook-launcher" run-one-hook >"$STATE/hook-same.out" 2>"$STATE/hook-same.err"
@@ -169,26 +187,30 @@ grep -q MERGE_SHA_IS_PR_HEAD "$STATE/hook-same.err"
 
 # The helper above writes the match line to its own stdout. The guest hook
 # is the installer embedded in the launcher. Run that installer.
-python3 - "$LAUNCHER" "$STATE/guest-fragment.sh" "$SHA" "$STATE" <<'PY'
+python3 - "$LAUNCHER" "$STATE/guest-fragment.sh" "$SHA" "$MERGE" "$STATE" <<'PY'
 import pathlib, sys
-launcher, dest, sha, state = sys.argv[1:]
+launcher, dest, sha, merge, state = sys.argv[1:]
 text = pathlib.Path(launcher).read_text(encoding="utf-8")
 start = text.index("hook='''") + len("hook='''")
-end = text.index("''' % (RUN_ID, ATTEMPT, JOB_NAME, HEAD, HEAD)", start)
+end = text.index("''' % (RUN_ID, ATTEMPT, JOB_NAME, HEAD, MERGE, HEAD)", start)
 template = text[start:end]
 if "dialout" in template or "chmod 0666 /dev/ttyS0" in template:
     raise SystemExit("runner serial privilege expanded")
 hook = template.split("<<'HOOK'\n", 1)[1].split("\nHOOK\n", 1)[0]
 if ">/dev/ttyS0" in hook:
     raise SystemExit("hook still opens ttyS0")
+if "merge_commit_sha" in hook:
+    raise SystemExit("hook still trusts event merge_commit_sha")
 if "/run/asi-ci/assigned-job.fifo" not in hook:
     raise SystemExit("hook does not use the root fifo")
 if 'ACTIONS_RUNNER_HOOK_JOB_STARTED="$ACTIONS_RUNNER_HOOK_JOB_STARTED"' not in text:
     raise SystemExit("hook variable is not passed to run.sh")
-if template.count("%s") != 5:
+if "0710" not in text or "WORK_DIR_PERMISSIONS" not in text:
+    raise SystemExit("parent work directory mode is not fixed")
+if template.count("%s") != 6:
     raise SystemExit("unexpected format slots: %s" % template.count("%s"))
 formatted = template
-for value in ("40", "1", "source_validation", sha, sha):
+for value in ("40", "1", "source_validation", sha, merge, sha):
     formatted = formatted.replace("%s", value, 1)
 formatted = (formatted
     .replace("/usr/local/lib/asi-ci", state + "/lib")
@@ -213,7 +235,7 @@ if [[ "$(id -u)" -eq 0 ]]; then
   source "$STATE/guest-fragment.sh"
   grep -q 'ASI_HOOK_EXEC_AS_RUNNER user=runner' "$STATE/serial"
   cat > "$STATE/event.json" <<EOF
-{"pull_request":{"head":{"sha":"$SHA"},"merge_commit_sha":"$MERGE"}}
+{"pull_request":{"head":{"sha":"$SHA"},"merge_commit_sha":"$(python3 -c 'print("d"*40)')"}}
 EOF
   /usr/sbin/runuser -u runner -- env \
     GITHUB_RUN_ID=40 GITHUB_RUN_ATTEMPT=1 GITHUB_JOB=source_validation \

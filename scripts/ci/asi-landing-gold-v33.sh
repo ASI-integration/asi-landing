@@ -20,10 +20,9 @@ if [[ "$MODE" == run-one-hook ]]; then
   if [[ "${GITHUB_EVENT_NAME:-}" == pull_request ]]; then
     [[ -n "${GITHUB_EVENT_PATH:-}" && -f "${GITHUB_EVENT_PATH}" ]] || { echo 'BLOCKED: PR_EVENT_MISSING' >&2; exit 97; }
     pr_head=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(((d.get("pull_request") or {}).get("head") or {}).get("sha") or "")' "$GITHUB_EVENT_PATH")
-    merge_sha=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print((d.get("pull_request") or {}).get("merge_commit_sha") or "")' "$GITHUB_EVENT_PATH")
     [[ "$pr_head" == "${ASI_EXPECT_HEAD:?}" ]] || { echo 'BLOCKED: PR_HEAD_MISMATCH' >&2; exit 97; }
-    [[ -n "$merge_sha" && "${GITHUB_SHA:-}" == "$merge_sha" ]] || { echo 'BLOCKED: MERGE_SHA_MISMATCH' >&2; exit 97; }
     [[ "${GITHUB_SHA:-}" != "$pr_head" ]] || { echo 'BLOCKED: MERGE_SHA_IS_PR_HEAD' >&2; exit 97; }
+    [[ "${GITHUB_SHA:-}" == "${ASI_EXPECT_MERGE:?}" ]] || { echo 'BLOCKED: MERGE_SHA_MISMATCH' >&2; exit 97; }
   else
     [[ "${GITHUB_SHA:-}" == "${ASI_EXPECT_HEAD:?}" ]] || { echo 'BLOCKED: HEAD_MISMATCH' >&2; exit 97; }
   fi
@@ -134,9 +133,28 @@ for status in ('queued', 'in_progress', 'pending'):
             other_labels = names(other.get('labels'))
             if other_labels and other_labels <= runner_labels:
                 fail('FOREIGN_JOB_ROUTE')
+merge_sha = head
+if event == 'pull_request':
+    if (pull.get('base') or {}).get('ref') != 'main':
+        fail('BASE_MISMATCH')
+    main = gh(f'repos/{repo}/commits/main')
+    base = main.get('sha') or ''
+    if not re.fullmatch(r'[a-f0-9]{40}', base) or (pull.get('base') or {}).get('sha') != base:
+        fail('BASE_MISMATCH')
+    ref = gh(f'repos/{repo}/git/ref/pull/{pr}/merge')
+    obj = ref.get('object') or {}
+    merge_sha = obj.get('sha') or ''
+    if obj.get('type') != 'commit' or not re.fullmatch(r'[a-f0-9]{40}', merge_sha) or merge_sha == head:
+        fail('MERGE_SHA_MISMATCH')
+    merge = gh(f'repos/{repo}/commits/{merge_sha}')
+    parents = [parent.get('sha') for parent in (merge.get('parents') or [])]
+    if merge.get('sha') != merge_sha or parents != [base, head]:
+        fail('MERGE_SHA_MISMATCH')
 safe = re.compile(r'[A-Za-z0-9_.:/,-]+')
 values = {
     'HEAD': head,
+    'MERGE_SHA': merge_sha,
+    'EVENT': event,
     'ROUTE_LABEL': route,
     'RUN_LABELS': route,
     'ADMITTED_RUN_ID': str(run_id),
@@ -271,6 +289,13 @@ else
 fi
 [[ -w /dev/kvm || "$(stat -c %G /dev/kvm)" == 'kvm' ]] || fatal 'KVM group access not demonstrated'
 if sudo -n test -e "$WORK" || sudo -n test -L "$WORK"; then fatal "Existing $WORK (no overwrite)"; fi
+if [[ "$MODE" == run-one ]]; then
+  [[ ! -L "$work_base" ]] || fatal 'WORK_DIR_PERMISSIONS'
+  sudo -n install -d -o root -g "$RUNNER_USER" -m 0710 "$work_base"
+  sudo -n chown root:"$RUNNER_USER" "$work_base"
+  sudo -n chmod 0710 "$work_base"
+  [[ "$(sudo -n stat -c '%U:%G:%a' "$work_base")" == "root:${RUNNER_USER}:710" ]] || fatal 'WORK_DIR_PERMISSIONS'
+fi
 [[ ! -L "$CACHE" ]] || fatal 'Image cache symlink'
 if sudo -n test -e "$CACHE"; then
   [[ "$(sudo -n stat -c %u "$CACHE")" == '0' ]] || fatal 'Image cache must be root-owned'
@@ -725,9 +750,12 @@ PY
   # Compose guest bootstrap with no host mounts, SSH or production secrets.
   local_tmp=$(mktemp -d /dev/shm/asi-landing-cloud.XXXXXXXX)
   chmod 0700 "$local_tmp"
-  python3 - "$RUNNER_URL" "$RUNNER_SHA" "$iteration" "$PROXY_PORT" "$local_tmp" "$RUN_LABELS" "$MODE" "${ADMITTED_RUN_ID:-0}" "${ADMITTED_ATTEMPT:-0}" "${ADMITTED_JOB_NAME:-job}" "$HEAD" "${ADMITTED_JOB_ID:-0}" <<'PY'
+  if [[ "$MODE" == run-one && "${EVENT:-}" == pull_request ]]; then
+    [[ "${MERGE_SHA:-}" =~ ^[a-f0-9]{40}$ && "$MERGE_SHA" != "$HEAD" ]] || fatal 'MERGE_SHA_MISMATCH'
+  fi
+  python3 - "$RUNNER_URL" "$RUNNER_SHA" "$iteration" "$PROXY_PORT" "$local_tmp" "$RUN_LABELS" "$MODE" "${ADMITTED_RUN_ID:-0}" "${ADMITTED_ATTEMPT:-0}" "${ADMITTED_JOB_NAME:-job}" "$HEAD" "${MERGE_SHA:-$HEAD}" "${ADMITTED_JOB_ID:-0}" "${EVENT:-}" <<'PY'
 import base64,pathlib,sys
-URL,SHA,ITER,PORT,OUT,LABELS,MODE,RUN_ID,ATTEMPT,JOB_NAME,HEAD,JOB_ID=sys.argv[1:]; dst=pathlib.Path(OUT)
+URL,SHA,ITER,PORT,OUT,LABELS,MODE,RUN_ID,ATTEMPT,JOB_NAME,HEAD,MERGE,JOB_ID,EVENT=sys.argv[1:]; dst=pathlib.Path(OUT)
 # The runner token is useful only for registration. No permanent GitHub credentials.
 bootstrap=r'''#!/usr/bin/env bash
 set -Eeuo pipefail
@@ -858,10 +886,9 @@ fi
 if [[ "${GITHUB_EVENT_NAME:-}" == pull_request ]]; then
   [[ -n "${GITHUB_EVENT_PATH:-}" && -f "${GITHUB_EVENT_PATH}" ]] || { echo PR_EVENT_MISSING; exit 97; }
   pr_head=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(((d.get("pull_request") or {}).get("head") or {}).get("sha") or "")' "$GITHUB_EVENT_PATH")
-  merge_sha=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print((d.get("pull_request") or {}).get("merge_commit_sha") or "")' "$GITHUB_EVENT_PATH")
   [[ "$pr_head" == "%s" ]] || { echo PR_HEAD_MISMATCH; exit 97; }
-  [[ -n "$merge_sha" && "${GITHUB_SHA:-}" == "$merge_sha" ]] || { echo MERGE_SHA_MISMATCH; exit 97; }
   [[ "${GITHUB_SHA:-}" != "$pr_head" ]] || { echo MERGE_SHA_IS_PR_HEAD; exit 97; }
+  [[ "${GITHUB_SHA:-}" == "%s" ]] || { echo MERGE_SHA_MISMATCH; exit 97; }
 else
   [[ "${GITHUB_SHA:-}" == "%s" ]] || { echo HEAD_MISMATCH; exit 97; }
 fi
@@ -871,7 +898,7 @@ chown root:root /usr/local/lib/asi-ci/verify-assigned-job.sh
 chmod 0755 /usr/local/lib/asi-ci/verify-assigned-job.sh
 runuser -u runner -- env ASI_HOOK_EXEC_CHECK=1 /usr/local/lib/asi-ci/verify-assigned-job.sh >/dev/ttyS0
 export ACTIONS_RUNNER_HOOK_JOB_STARTED=/usr/local/lib/asi-ci/verify-assigned-job.sh
-''' % (RUN_ID, ATTEMPT, JOB_NAME, HEAD, HEAD)
+''' % (RUN_ID, ATTEMPT, JOB_NAME, HEAD, MERGE, HEAD)
     name='asi-%s-%s-%s' % (RUN_ID, ATTEMPT, JOB_ID)
 else:
     name='asi-landing-kvm-687-'+ITER
@@ -881,12 +908,16 @@ if MODE=='run-one':
     assert '--no-default-labels --labels '+LABELS in bootstrap
     assert 'self-hosted' not in label_args
     assert 'chmod 0755 /usr/local/lib/asi-ci/verify-assigned-job.sh' in bootstrap
-    assert 'merge_commit_sha' in bootstrap
+    assert MERGE in bootstrap
+    if EVENT == 'pull_request':
+        assert MERGE != HEAD
     assert 'assigned-job.fifo' in bootstrap
     assert 'ACTIONS_RUNNER_HOOK_JOB_STARTED="$ACTIONS_RUNNER_HOOK_JOB_STARTED"' in bootstrap
     assert 'dialout' not in bootstrap
     hook_script=bootstrap.split("<<'HOOK'\n",1)[1].split('\nHOOK\n',1)[0]
     assert '>/dev/ttyS0' not in hook_script
+    assert 'merge_commit_sha' not in hook_script
+    assert '[[ "${GITHUB_SHA:-}" == "%s" ]]' not in hook_script
     assert LABELS=='asi-%s-%s-%s' % (RUN_ID, ATTEMPT, JOB_NAME)
 assert '__TOKEN__' not in bootstrap
 assert '__LABEL_ARGS__' not in bootstrap and '__HOOK__' not in bootstrap
