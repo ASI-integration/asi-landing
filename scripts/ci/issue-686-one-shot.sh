@@ -88,38 +88,144 @@ export ASI_MODEL_EFFECTS=CODEX,INDEPENDENT_REVIEW
 export ASI_DISPATCHER_EXECUTE=NO
 export ASI_PAID_CALLS_ENABLED=NO
 export ASI_GLOBAL_CAP_KOPECKS=0
-if [[ -z "${GH_CONFIG_DIR:-}" && -d /home/administrator/.config/gh ]]; then
-  export GH_CONFIG_DIR=/home/administrator/.config/gh
-fi
+unset GH_CONFIG_DIR
+
+tool_path() {
+  local path=$1
+  path=$(readlink -f "$path")
+  [[ "$path" == /usr/bin/* || "$path" == /usr/sbin/* || "$path" == /usr/local/bin/* ]] || fail TOOL_PATH
+  [[ -x "$path" && "$(stat -c '%u' "$path")" == 0 ]] || fail TOOL_PATH
+  printf '%s\n' "$path"
+}
+
+as_administrator() {
+  local py ru
+  py=$(tool_path /usr/bin/python3)
+  ru=$(tool_path /usr/sbin/runuser)
+  "$ru" -u administrator -- env -i \
+    HOME=/home/administrator \
+    USER=administrator \
+    LOGNAME=administrator \
+    PATH=/usr/local/bin:/usr/bin:/bin \
+    PYTHONPATH="${ASI_RUNTIME_ROOT:-/home/administrator/asi-continuous}:/home/administrator/asi-v18-reviewed-main-20261115/ops/v17" \
+    ASI_RUNTIME_ROOT="${ASI_RUNTIME_ROOT:-/home/administrator/asi-continuous}" \
+    ASI_WORKER_SLOT="${ASI_WORKER_SLOT:-5}" \
+    ASI_AUTOMATIC_RETRY="${ASI_AUTOMATIC_RETRY:-false}" \
+    ASI_API_FALLBACK="${ASI_API_FALLBACK:-false}" \
+    ASI_MODEL_EFFECTS="${ASI_MODEL_EFFECTS:-CODEX,INDEPENDENT_REVIEW}" \
+    ASI_DISPATCHER_EXECUTE="${ASI_DISPATCHER_EXECUTE:-NO}" \
+    ASI_PAID_CALLS_ENABLED="${ASI_PAID_CALLS_ENABLED:-NO}" \
+    ASI_GLOBAL_CAP_KOPECKS="${ASI_GLOBAL_CAP_KOPECKS:-0}" \
+    ASI_ISSUE_686_EFFECT_DIR="${ASI_ISSUE_686_EFFECT_DIR:-}" \
+    ASI_ISSUE_686_PUBLISH="${ASI_ISSUE_686_PUBLISH:-}" \
+    ASI_ISSUE_686_NO_SPEND="${ASI_ISSUE_686_NO_SPEND:-}" \
+    ASI_ISSUE_686_SIMULATE_EXTERNAL="${ASI_ISSUE_686_SIMULATE_EXTERNAL:-}" \
+    "$py" "$@"
+}
+
+admin_python() {
+  if [[ "$(id -u)" -eq 0 ]]; then
+    as_administrator -
+  else
+    PYTHONPATH="${ASI_RUNTIME_ROOT:-/home/administrator/asi-continuous}:/home/administrator/asi-v18-reviewed-main-20261115/ops/v17" python3 -
+  fi
+}
 
 run_adapter() {
-  python3 "$ADAPTER" "$1"
+  if [[ "$(id -u)" -eq 0 && "${ASI_ISSUE_686_NO_SPEND:-}" != 1 ]]; then
+    as_administrator "$ADAPTER" "$1"
+  else
+    python3 "$ADAPTER" "$1"
+  fi
 }
 
 if [[ "${1:-}" == --preflight ]]; then
   runtime=${ASI_RUNTIME_ROOT:-/home/administrator/asi-continuous}
-  for tool in gh git python3 openssl sqlite3; do
-    command -v "$tool" >/dev/null || fail "TOOL_${tool}"
-  done
-  [[ -n "${GH_CONFIG_DIR:-}" && -f "$GH_CONFIG_DIR/hosts.yml" ]] || fail GITHUB_AUTH
-  git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null || fail GIT_REPO
-  git -C "$REPO" ls-remote --exit-code origin refs/heads/agent/p1-686-dispatcher-recovery-audit >/dev/null || fail GIT_REMOTE
-  PYTHONPATH="$runtime" python3 - <<'PY' || fail GITHUB_ISSUE_READ_FAILED
-import issue_intake
+  tool_path /usr/bin/gh >/dev/null
+  tool_path /usr/bin/git >/dev/null
+  tool_path /usr/bin/python3 >/dev/null
+  tool_path /usr/bin/openssl >/dev/null
+  tool_path /usr/bin/sqlite3 >/dev/null
+  [[ "${ASI_API_FALLBACK}" == false ]] || fail API_FALLBACK
+  admin_python <<'PY' || fail GITHUB_ISSUE_READ_FAILED
+import os, pwd, issue_intake
+if os.geteuid() != pwd.getpwnam("administrator").pw_uid:
+    raise SystemExit("NOT_ADMINISTRATOR")
 issue = issue_intake.fetch_issue_readonly()
 if issue.get("number") != 686 or "HOLD" not in str(issue.get("title") or ""):
     raise SystemExit(1)
 print("ISSUE_READ", issue["number"])
+print("CHECK privilege_drop PASS", os.geteuid())
 PY
-  perms=$(gh api repos/ASI-integration/asi-landing --jq '{pull:.permissions.pull,push:.permissions.push}')
+  perms=$(admin_python <<'PY'
+import os, pwd, subprocess
+if os.geteuid() != pwd.getpwnam("administrator").pw_uid:
+    raise SystemExit("NOT_ADMINISTRATOR")
+gh = os.path.realpath("/usr/bin/gh")
+if not gh.startswith("/usr/bin/") or not os.path.isfile(gh):
+    raise SystemExit("TOOL_PATH")
+result = subprocess.run([gh, "api", "repos/ASI-integration/asi-landing", "--jq", "{pull:.permissions.pull,push:.permissions.push}"], capture_output=True, text=True)
+if result.returncode != 0:
+    raise SystemExit("GITHUB_REPO_PERMISSION")
+print(result.stdout.strip())
+PY
+)
   [[ "$perms" == *'"pull":true'* ]] || fail GITHUB_REPO_PERMISSION
-  model=$(python3 "$runtime/check_models_readonly.py")
-  [[ "$model" == *"gpt-6-luna HTTP 200 MODEL_VISIBLE=YES"* ]] || fail MODEL_ENDPOINT
-  [[ "$model" == *"gpt-6.1-sol HTTP 200 MODEL_VISIBLE=YES"* ]] || fail MODEL_ENDPOINT
+  admin_python <<'PY' || fail CODEX_ROUTE
+import os, pwd, codex_subscription as sub
+if os.geteuid() != pwd.getpwnam("administrator").pw_uid:
+    raise SystemExit("NOT_ADMINISTRATOR")
+argv = sub.codex_argv("/home/administrator", review=True)
+required = ("forced_login_method=\"chatgpt\"", "model_provider=\"openai\"", "--ignore-user-config", "exec")
+if argv[0] != "codex" or "read-only" not in argv or any(item not in argv for item in required):
+    raise SystemExit("CODEX_ARGV")
+account = sub.account_probe()
+if account.get("mode") != "chatgpt-included-only" or account.get("metered_api_allowed") is not False:
+    raise SystemExit("CODEX_BILLING")
+print("CHECK codex_route PASS", account["mode"])
+PY
+  admin_python <<'PY' || fail REVIEW_ROUTE
+import cloudru_bridge as cloud
+from provider_dispatch import BudgetHalt
+if cloud.MODEL != "ai-sage/GigaChat3.5-432B-A28B" or cloud.RESERVE_KOPECKS != 3200:
+    raise SystemExit("REVIEW_MODEL")
+try:
+    cloud.tariff_preflight()
+except BudgetHalt as error:
+    if "PAID_EFFECTS_DISABLED_UNTIL_SIGNED_RELEASE" not in str(error):
+        raise
+else:
+    raise SystemExit("REVIEW_SPEND_NOT_HELD")
+print("CHECK review_route PASS", cloud.MODEL)
+PY
+  git=$(tool_path /usr/bin/git)
+  env -i PATH=/usr/bin:/bin HOME=/root GIT_CONFIG_GLOBAL=/dev/null \
+    "$git" -c core.hooksPath=/dev/null -c protocol.ext.allow=never \
+    -C "$REPO" rev-parse --is-inside-work-tree >/dev/null || fail GIT_REPO
+  env -i PATH=/usr/bin:/bin HOME=/root GIT_CONFIG_GLOBAL=/dev/null \
+    "$git" -c core.hooksPath=/dev/null -c protocol.ext.allow=never \
+    -C "$REPO" ls-remote --exit-code origin refs/heads/agent/p1-686-dispatcher-recovery-audit >/dev/null || fail GIT_REMOTE
+  python3 - "$runtime" "$ADAPTER" <<'PY' || fail EXEC_ISOLATION
+import pathlib, sqlite3, sys
+runtime, adapter = sys.argv[1:]
+local = pathlib.Path(runtime, "local_ci.py").read_text(encoding="utf-8")
+publisher = pathlib.Path(runtime, "pr_publisher.py").read_text(encoding="utf-8")
+adapter_text = pathlib.Path(adapter).read_text(encoding="utf-8")
+if "env=ENV" not in local or '"HOME":"/home/administrator"' not in local or "shell=True" in local:
+    raise SystemExit("LOCAL_CI")
+if "shell=True" in publisher or "shell=True" in adapter_text:
+    raise SystemExit("AGENT_EXEC")
+ledger = sqlite3.connect("file:/home/administrator/asi-continuous/global-paid-spend.sqlite3?mode=ro", uri=True)
+cap, paused = ledger.execute("select cap, paused from policy where id=1").fetchone()
+count = ledger.execute("select count(*) from calls").fetchone()[0]
+if (cap, paused, count) != (0, 0, 0):
+    raise SystemExit("LEDGER")
+print("CHECK ledger PASS", cap, paused, count)
+PY
   echo "CHECK github_api PASS"
   echo "CHECK repo_permission PASS $perms"
-  echo "CHECK model_endpoint PASS"
-  echo "CHECK git_repo PASS"
+  echo "CHECK git_hooks PASS disabled"
+  echo "CHECK api_fallback PASS false"
   echo "CHECK tools PASS gh git python3 openssl sqlite3"
   echo PREFLIGHT_FREE_OK
   exit 0
@@ -252,15 +358,18 @@ with sqlite3.connect(Path(ledger).resolve().as_uri(), uri=True) as db:
     db.commit()
 PY
 if [[ -z "${ASI_ISSUE_686_EFFECT_DIR:-}" ]]; then
-  export ASI_ISSUE_686_EFFECT_DIR=/var/lib/asi/issue-686-effects
+  export ASI_ISSUE_686_EFFECT_DIR=/home/administrator/.asi-issue-686/effects
 fi
-install -d -m 0700 "$ASI_ISSUE_686_EFFECT_DIR"
+install -d -m 0700 "$(dirname "$ASI_ISSUE_686_EFFECT_DIR")" "$ASI_ISSUE_686_EFFECT_DIR"
+if [[ "$(id -u)" -eq 0 ]]; then
+  chown administrator:administrator "$(dirname "$ASI_ISSUE_686_EFFECT_DIR")" "$ASI_ISSUE_686_EFFECT_DIR"
+fi
 run_adapter capture
 if [[ "$ATTESTED" == 1 ]]; then
   python3 "$ATTEST" admit-call --state /var/lib/asi/issue-686-attestation.json --effect CODEX
 fi
 run_adapter codex
-export ASI_ISSUE_686_PUBLISH=/var/lib/asi/issue-686-publish.json
+export ASI_ISSUE_686_PUBLISH=/home/administrator/.asi-issue-686/publish.json
 unset ASI_ISSUE_686_SIMULATE_EXTERNAL
 run_adapter local-ci
 if [[ "$ATTESTED" == 1 ]]; then
