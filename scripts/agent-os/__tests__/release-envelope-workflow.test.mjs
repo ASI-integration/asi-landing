@@ -4,7 +4,18 @@ import {readFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 
-const workflow=readFileSync(new URL('../../../.github/workflows/pr-validation.yml',import.meta.url),'utf8');
+function offlineSuite(args){
+  const env={...process.env};
+  for(const key of Object.keys(env)){
+    if(key.startsWith('NODE_TEST')||key.startsWith('NODE_CHANNEL')) delete env[key];
+  }
+  return spawnSync(process.execPath,args,{
+    cwd:fileURLToPath(new URL('../../..',import.meta.url)),
+    encoding:'utf8',timeout:90000,execArgv:[],env,
+  });
+}
+
+const workflow=readFileSync(new URL('../../../.github/workflows/pr-validation.yml',import.meta.url),'utf8').replace(/\r\n/g,'\n');
 const jobs=Object.fromEntries([...workflow.split('\njobs:\n')[1].matchAll(/^  ([a-z_-]+):\n([\s\S]*?)(?=^  [a-z_-]+:\n|$(?![\s\S]))/gm)]
   .map(m=>[m[1],m[2]]));
 
@@ -17,6 +28,24 @@ test('required validate remains aggregate admission, never a source-only green c
   assert.equal((jobs.validate.match(/node scripts\/agent-os\/check-demo-release.mjs --ci/g)||[]).length,1);
   assert.doesNotMatch(jobs.source_validation,/check-demo-release.mjs --ci/);
   assert.doesNotMatch(jobs.validate,/continue-on-error|\|\| true/);
+  assert.match(jobs.source_validation,/timeout-minutes: 45\n/);
+  assert.match(jobs.source_validation, /name: source_validation\n    runs-on: asi-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}-source_validation\n/);
+  assert.match(jobs.validate, /name: validate\n/);
+  assert.match(jobs.validate, /runs-on: asi-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}-validate\n/);
+  assert.match(jobs['channel-manager-recovery-postgres'], /name: channel-manager-recovery-postgres\n    runs-on: asi-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}-channel-manager-recovery-postgres\n/);
+  assert.doesNotMatch(workflow, /github\.job/);
+  assert.doesNotMatch(workflow, /runs-on:.*self-hosted/);
+  assert.match(jobs.source_validation,/timeout --signal=TERM --kill-after=30s 3300/);
+});
+
+test('v0 scope check runs only after source success and checkout',()=>{
+  const marker='- name: Validate demo release milestones and PR scope\n';
+  const step=jobs.validate.split(marker)[1];
+  assert.ok(step);
+  assert.match(step,/if: \$\{\{ success\(\) \}\}/);
+  assert.doesNotMatch(step.split('\n      - name:')[0],/!cancelled\(\)/);
+  assert.match(jobs.validate,/if: \$\{\{ !cancelled\(\) \}\}/);
+  assert.match(jobs.validate,/test "\$SOURCE_RESULT" = success/);
 });
 
 test('aggregate dependency guard rejects failure, cancellation, skipped and unknown results',()=>{
@@ -46,8 +75,14 @@ test('trusted boundary executes protected base only and retains independent v0 a
 });
 
 test('reviewer no-spend negatives stay in the offline suite',()=>{
-  const root=fileURLToPath(new URL('../../..',import.meta.url));
-  const result=spawnSync(process.execPath,['--test','scripts/agent-os/__tests__/reviewer-permit.test.mjs'],
-    {cwd:root,encoding:'utf8',timeout:60000});
+  const result=offlineSuite(['--test','scripts/agent-os/__tests__/reviewer-permit.test.mjs']);
   assert.equal(result.status,0,(result.stdout||'')+(result.stderr||''));
+  assert.match(result.stdout||'',/# pass 5|ℹ pass 5/);
+});
+
+test('ephemeral dispatcher decisions stay in the offline suite',()=>{
+  const result=offlineSuite(['--test','scripts/ci/ephemeral-dispatcher.test.mjs']);
+  assert.equal(result.status,0,(result.stdout||'')+(result.stderr||''));
+  assert.match(result.stdout||'',/# fail 0|ℹ fail 0/);
+  assert.match(result.stdout||'',/installed dispatcher tree/);
 });

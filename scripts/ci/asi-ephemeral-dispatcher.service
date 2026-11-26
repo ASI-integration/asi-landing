@@ -1,0 +1,19 @@
+[Unit]
+Description=ASI ephemeral KVM dispatcher for allowed CI jobs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=administrator
+Group=kvm
+# The proven Gold launcher is administrator plus sudo -n for KVM and overlays.
+# NoNewPrivileges would block that setuid and the guest would never start.
+EnvironmentFile=-/etc/asi/ephemeral-dispatcher.env
+ExecStartPre=/usr/local/sbin/asi-ephemeral-dispatcher.sh recover
+ExecStart=/usr/local/sbin/asi-ephemeral-dispatcher.sh serve
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

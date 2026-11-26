@@ -13,6 +13,9 @@ import {createGitHubReader} from './github-readonly.mjs';
 import {createStandingRequestPreview,inspectStandingAdmissionReceipt} from './standing-request-guard.mjs';
 import {ENVELOPE_SECURITY_REQUIRED,inspectProtectedRepositorySecurity,checkPr,main} from '../../agent-os/check-demo-release.mjs';
 const hash=x=>createHash('sha256').update(x).digest('hex');
+// Same production bounds as createGitHubPublisher: call() uses timeoutMs and
+// evidence() uses min(30000, timeoutMs*3). The late read stays after that bound.
+const GATE_TIMEOUT_MS=300,GATE_EVIDENCE_MS=Math.min(30000,GATE_TIMEOUT_MS*3),GATE_LATE_MS=GATE_EVIDENCE_MS+600;
 const key=()=>{const pair=generateKeyPairSync('ed25519');return {...pair,pem:pair.publicKey.export({type:'spki',format:'pem'}),digest:hash(pair.publicKey.export({type:'spki',format:'der'}))};};
 const signed=(value,k)=>{const payload=JSON.stringify(value);return {payload,signature:sign(null,Buffer.from(payload),k.privateKey).toString('base64')};};
 const descriptor=(method='GET',route='branches/main')=>{const payloadSha256=hash(method==='GET'?'':'{}');return {method,route,payloadSha256,requestSha256:hash(JSON.stringify({method,route,payloadSha256}))};};
@@ -63,7 +66,10 @@ async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lat
   const diff=execFileSync('git',['diff','--no-ext-diff','--no-textconv','--',target],{cwd:comparison.repoRoot,encoding:'utf8'});
   deltas.push(hash(diff));await fs.writeFile(file,'VALUE = 1\n');
  }
- const loop=await makeLoop(f,{now,timeoutMs:gateMode==='timeout'?300:10000,transactionPorts:async({store,transaction})=>{
+ const loop=await makeLoop(f,{now,timeoutMs:gateMode==='timeout'?GATE_TIMEOUT_MS:10000,transactionPorts:async({store,transaction})=>{
+  // Yield longer than timeoutMs before runGate exists. The timeout test keeps
+  // this deadline on the mocked clock until that callback is entered.
+  if(gateMode==='timeout'){const start=Date.now();while(Date.now()-start<GATE_TIMEOUT_MS+100)await new Promise(r=>setImmediate(r));}
   const task=f.catalog[resumeSame?0:selected],artifactDigest=deltas[resumeSame?0:selected++];
   const lease=inspectStandingTransaction(transaction);if(!lease.ledger.standingRevocationCheckpoint)lease.ledger.standingRevocationCheckpoint=prior;
   const request={action:'source',repo:envelope.repo,environment:envelope.environment,target:envelope.target,appId:envelope.appId,installationId:envelope.installationId,securityDigest:envelope.securityDigest,changedPaths:[target],headSha:null,baseSha:f.sha,artifactDigest,taskId:task.id,taskBinding:bindTask(task),branch:task.branch};
@@ -73,7 +79,7 @@ async function setup(t,{adoptionMode=null,wrongLocal=false,forgedLocal=false,lat
   // explicit synthetic v0 grant. Production preview.beforeRequest always refuses.
   const runGate=async event=>{
     gateEvents.push(event);
-    if(gateMode==='timeout'){await new Promise(r=>setTimeout(r,1500));assert.throws(()=>inspectPublisherLifecycleEvidence(event,transaction),/UNTRUSTED/);gateClockCounts.push(-1);return {status:'BLOCKED'};}
+    if(gateMode==='timeout'){await new Promise(r=>setTimeout(r,GATE_LATE_MS));assert.throws(()=>inspectPublisherLifecycleEvidence(event,transaction),/UNTRUSTED/);gateClockCounts.push(-1);return {status:'BLOCKED'};}
     const expected={repository:envelope.repo,number:event.pr,baseSha:f.sha,headSha:event.headSha,independentReviewerId:wrongReviewer?1235:1234};
     const bound={number:event.pr,head:{sha:event.headSha},base:{sha:f.sha}};
     const snapshot={pr:{...f.pulls.get(event.pr),user:{id:4567}},runs:[{workflow_id:311380800,event:'pull_request',head_sha:event.headSha},{workflow_id:390653294,event:'pull_request_target',head_sha:f.sha}].map((r,i)=>({...r,id:100+i,run_attempt:1,repository:{full_name:envelope.repo},pull_requests:[bound],status:'completed',conclusion:'success',updated_at:new Date(now.value).toISOString()})),reviews:[{id:9,user:{id:1234},state:'APPROVED',commit_id:event.headSha,submitted_at:new Date(now.value).toISOString()}]};
@@ -297,8 +303,25 @@ test('authenticated pending source preserves WAITING and resumes with no write r
  assert.deepEqual(x.f.writes,writes);assert(x.gateCalls.at(-1).requests>spent);
 });
 test('timed-out gate revokes its native event before late continuation',async t=>{
- const x=await setup(t,{gateMode:'timeout'});assert.equal((await x.loop.poll({execute:true})).mode,'FAILED_LOCKED');
- await new Promise(r=>setTimeout(r,1600));assert.equal(x.gateCalls.length,0);assert.equal(x.gateEvents.length,1);assert.deepEqual(x.gateClockCounts,[-1]);
+ const x=await setup(t,{gateMode:'timeout'});
+ // Freeze production deadlines across the pre-gate yield. Advance the mocked
+ // clock only after runGate holds the native event, and only through the
+ // evidence bound, so revocation is visible before the late continuation.
+ t.mock.timers.enable({apis:['setTimeout']});
+ let early;const pending=x.loop.poll({execute:true}).then(result=>{early={result};return result;},error=>{early={error};throw error;});
+ const started=Date.now();
+ while(x.gateEvents.length!==1){
+  if(early)throw Error('GATE_DEADLINE_BEFORE_ENTRY');
+  if(Date.now()-started>120000)throw Error('GATE_NOT_ENTERED');
+  await new Promise(r=>setImmediate(r));
+ }
+ assert.equal(x.gateCalls.length,0);assert.equal(x.gateClockCounts.length,0);
+ t.mock.timers.tick(GATE_EVIDENCE_MS);
+ assert.equal((await pending).mode,'FAILED_LOCKED');
+ assert.equal(x.gateClockCounts.length,0);
+ t.mock.timers.tick(GATE_LATE_MS-GATE_EVIDENCE_MS);
+ await Promise.resolve();await Promise.resolve();
+ assert.equal(x.gateCalls.length,0);assert.equal(x.gateEvents.length,1);assert.deepEqual(x.gateClockCounts,[-1]);
 });
 
 // Source-only signed adoption fixture. Production remains unconfigured/v0.
