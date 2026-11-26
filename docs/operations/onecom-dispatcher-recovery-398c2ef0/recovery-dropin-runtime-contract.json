@@ -5,9 +5,9 @@
   "identity": {
     "ref": "refs/heads/main",
     "sha": "398c2ef0c2432aff8e841cc3f8075794c869a82a",
-    "recordId": "exact-sha=440155902f3f263eb8308ae96dbafdbb548cc55e;package-sha256=7e6561ed08e3904a67e89f93de5bbd084cad50b5f06599642afdbfcf8ac28082;scenario-sha256=1f80857c356067054671b855e4e24f131436a50c7fea5658adbaf3d892e568fc"
+    "recordId": "exact-sha=39b75b7770fce0297954f7e24418dbe5f08c0ce7;package-sha256=cbf301ac7bf9663daf72a5a6081aa2b2622b52ec778feee3899fdad629e883b7;scenario-sha256=1f80857c356067054671b855e4e24f131436a50c7fea5658adbaf3d892e568fc"
   },
-  "allowedSideEffect": "Install only /usr/local/libexec/asi-ephemeral-dispatcher-recover and asi-ephemeral-dispatcher.service.d/recovery.conf from exact recovery commit 440155902f3f263eb8308ae96dbafdbb548cc55e package SHA256 7e6561ed08e3904a67e89f93de5bbd084cad50b5f06599642afdbfcf8ac28082 scenario SHA256 1f80857c356067054671b855e4e24f131436a50c7fea5658adbaf3d892e568fc on protected main 398c2ef0c2432aff8e841cc3f8075794c869a82a. File SHA256 recover=040a1c7c580cccf68aa4e01665bf1939964a33cc7bf0802b1420f3a7254629d7 drop-in=1181ffc98962418eead3b2f4ad9dab8eadf54f87d0971d4970ba839d9e68ebe8 activate=efb441aa4144dc519c4066cbf6a5b0028ee9b52ddd9f6f75b808a74c33411764. Then daemon-reload and systemctl start asi-ephemeral-dispatcher.service only while ASI_DISPATCHER_EXECUTE=NO. The helper may run as root solely for ExecStartPre. The main dispatcher process stays User=administrator. Do not systemctl enable. Do not set ASI_DISPATCHER_EXECUTE. Do not widen the work directory. Do not clear NO_RETRY. Do not rebuild Gold. Do not change branch protection. Do not set ASI_PAID_CALLS_ENABLED. Do not change the spend cap. Do not remove HOLD from Issue #686. This gate does not authorize any other commit or package hash.",
+  "allowedSideEffect": "Install only /usr/local/libexec/asi-ephemeral-dispatcher-recover and asi-ephemeral-dispatcher.service.d/recovery.conf from exact recovery commit 39b75b7770fce0297954f7e24418dbe5f08c0ce7 package SHA256 cbf301ac7bf9663daf72a5a6081aa2b2622b52ec778feee3899fdad629e883b7 scenario SHA256 1f80857c356067054671b855e4e24f131436a50c7fea5658adbaf3d892e568fc on protected main 398c2ef0c2432aff8e841cc3f8075794c869a82a. File SHA256 recover=e85a1d8da10fd19f44d952bf7712c95a3f81a86db341f0849803b62a7077ce6d drop-in=1181ffc98962418eead3b2f4ad9dab8eadf54f87d0971d4970ba839d9e68ebe8 activate=efb441aa4144dc519c4066cbf6a5b0028ee9b52ddd9f6f75b808a74c33411764. The lock python is reaped before ExecStartPre returns. Then daemon-reload and systemctl start asi-ephemeral-dispatcher.service only while ASI_DISPATCHER_EXECUTE=NO. The helper may run as root solely for ExecStartPre. The main dispatcher process stays User=administrator. Do not systemctl enable. Do not set ASI_DISPATCHER_EXECUTE. Do not widen the work directory. Do not clear NO_RETRY. Do not rebuild Gold. Do not change branch protection. Do not set ASI_PAID_CALLS_ENABLED. Do not change the spend cap. Do not remove HOLD from Issue #686. This gate does not authorize any other commit or package hash.",
   "postActionVerification": [
     "systemctl cat asi-ephemeral-dispatcher.service shows User=administrator and ExecStartPre=+/usr/local/libexec/asi-ephemeral-dispatcher-recover.",
     "The work directory remains root:asi-landing-kvm mode 0710.",
@@ -16,8 +16,9 @@
     "The sqlite spend ledger reads cap 0, paused 0, and paid call count 0.",
     "The sealed Gold image remains root-owned, mode 0444, and its virtual size remains 42949672960 bytes.",
     "ASI_DISPATCHER_EXECUTE remains NO, ASI_PAID_CALLS_ENABLED remains NO, and rollback restores the original active and enabled unit state.",
-    "systemctl start runs only while ASI_DISPATCHER_EXECUTE=NO. systemctl enable is not run."
+    "systemctl start runs only while ASI_DISPATCHER_EXECUTE=NO. systemctl enable is not run.",
+    "Ten consecutive starts do not report a left-over python3 process."
   ],
-  "scope": "Install the recovery helper and drop-in for exact commit 440155902f3f263eb8308ae96dbafdbb548cc55e, daemon-reload, and systemctl start asi-ephemeral-dispatcher.service only while ASI_DISPATCHER_EXECUTE=NO. Do not systemctl enable.",
+  "scope": "Install the recovery helper and drop-in for exact commit 39b75b7770fce0297954f7e24418dbe5f08c0ce7, daemon-reload, and systemctl start asi-ephemeral-dispatcher.service only while ASI_DISPATCHER_EXECUTE=NO. Do not systemctl enable.",
   "taskCycle": "onecom-dispatcher-recovery-398c2ef0-cycle-2"
 }

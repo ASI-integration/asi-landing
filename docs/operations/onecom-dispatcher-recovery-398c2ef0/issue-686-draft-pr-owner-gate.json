@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "asi.agent-os.owner-gate.v1",
+  "taskId": "onecom-issue-686-draft-pr-cycle",
+  "status": "missing",
+  "action": "repository_or_environment_settings_change",
+  "target": "ASI-integration/asi-landing",
+  "identity": {
+    "ref": "refs/heads/main",
+    "sha": "398c2ef0c2432aff8e841cc3f8075794c869a82a",
+    "recordId": "exact-sha=39b75b7770fce0297954f7e24418dbe5f08c0ce7;package-sha256=cbf301ac7bf9663daf72a5a6081aa2b2622b52ec778feee3899fdad629e883b7;scenario-sha256=1f80857c356067054671b855e4e24f131436a50c7fea5658adbaf3d892e568fc"
+  },
+  "allowedSideEffect": "Prepare one Issue #686 cycle that ends in an unmerged draft PR for exact recovery commit 39b75b7770fce0297954f7e24418dbe5f08c0ce7 package SHA256 cbf301ac7bf9663daf72a5a6081aa2b2622b52ec778feee3899fdad629e883b7 scenario SHA256 1f80857c356067054671b855e4e24f131436a50c7fea5658adbaf3d892e568fc on protected main 398c2ef0c2432aff8e841cc3f8075794c869a82a. This missing gate does not authorize that cycle. Do not set ASI_DISPATCHER_EXECUTE. Do not set ASI_PAID_CALLS_ENABLED. Do not change the spend cap. Do not remove HOLD from Issue #686. Do not rebuild Gold. Do not reboot the VPS. Do not install or restart the dispatcher in this gate.",
+  "postActionVerification": [
+    "The draft PR is open and unmerged.",
+    "ASI_DISPATCHER_EXECUTE remains NO.",
+    "ASI_PAID_CALLS_ENABLED remains NO and the spend cap remains 0.",
+    "Issue #686 remains HOLD.",
+    "The sealed Gold image is unchanged."
+  ],
+  "authorization": null,
+  "typedConfirmation": {
+    "present": false,
+    "countsAsOwnerApproval": false
+  }
+}
