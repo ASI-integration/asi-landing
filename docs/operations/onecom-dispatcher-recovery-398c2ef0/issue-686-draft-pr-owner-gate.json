@@ -1,7 +1,7 @@
 {
   "schemaVersion": "asi.agent-os.owner-gate.v1",
   "taskId": "onecom-issue-686-draft-pr-cycle",
-  "status": "missing",
+  "status": "approved",
   "action": "payment_or_financial_operation",
   "target": "ASI-integration/asi-landing",
   "identity": {
@@ -20,7 +20,12 @@
     "Issue #686 is HOLD.",
     "The sealed Gold image is unchanged and the VPS was not rebooted by this permit."
   ],
-  "authorization": null,
+  "authorization": {
+    "source": "explicit_owner_message",
+    "owner": "Nikolay",
+    "scope": "One-time signed Issue #686 cycle for worker 5: capture, CODEX, local test, INDEPENDENT_REVIEW, and one unmerged draft PR. Maximum spend 6400 kopecks. automatic_retry=false. api_fallback=false. Model effects are only CODEX and INDEPENDENT_REVIEW. Check the current Cloud.ru balance and fail closed when required environment variables are missing. On every outcome, including failure and reboot, restore cap 0, ASI_PAID_CALLS_ENABLED=NO, ASI_DISPATCHER_EXECUTE=NO, and HOLD. Do not merge. Do not rebuild Gold. Do not reboot the VPS.",
+    "taskCycle": "onecom-issue-686-one-shot-cycle-1"
+  },
   "typedConfirmation": {
     "present": false,
     "countsAsOwnerApproval": false
