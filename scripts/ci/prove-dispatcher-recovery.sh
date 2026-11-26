@@ -315,16 +315,20 @@ ASI_RECOVERY_DRY_ROOT="$DRY" ASI_RECOVERY_DRY_BIN="$BIN" \
 grep -q RECOVERY_ENABLE_OK "$STATE/enabled.out"
 grep -q '^enable asi-ephemeral-dispatcher.service$' "$LOG"
 install_gate=$SRC/../../docs/operations/onecom-dispatcher-recovery-398c2ef0/recovery-dropin-owner-gate.json
-python3 -c 'import json,sys; assert json.load(open(sys.argv[1], encoding="utf-8"))["status"]=="missing"' "$install_gate"
-: > "$LOG"
-set +e
-PATH="$BIN:$PATH" ASI_DISPATCHER_HOST_INSTALL=YES \
-  bash "$SRC/onecom-dispatcher-recovery.sh" install-and-verify >"$STATE/host.out" 2>"$STATE/host.err"
-host_rc=$?
-set -e
-[[ "$host_rc" -ne 0 ]]
-grep -q GATE_MISSING "$STATE/host.err" || { echo 'HOST_NOT_BLOCKED' >&2; cat "$STATE/host.err" >&2; exit 1; }
-[[ ! -s "$LOG" ]] || { echo 'HOST_MUTATED' >&2; cat "$LOG" >&2; exit 1; }
+install_contract=$SRC/../../docs/operations/onecom-dispatcher-recovery-398c2ef0/recovery-dropin-runtime-contract.json
+python3 - "$install_gate" "$install_contract" "$enable_gate" <<'PY'
+import json, sys
+gate, contract, enable = (json.load(open(path, encoding="utf-8")) for path in sys.argv[1:4])
+if gate["status"] != "approved":
+    raise SystemExit("install gate is not approved")
+if enable["status"] == "approved":
+    raise SystemExit("enable gate must stay unapproved")
+scope = gate["authorization"]["scope"]
+if scope != contract["scope"] or "systemctl start" not in scope or "Do not systemctl enable" not in scope:
+    raise SystemExit("start is not bound in the install scope")
+if "systemctl start" not in gate["allowedSideEffect"] or "Do not systemctl enable" not in gate["allowedSideEffect"]:
+    raise SystemExit("start is not bound in the allowed side effect")
+PY
 rm -rf -- "$DRY" "$BIN"
 
 echo RECOVERY_HELPER_PROVED
