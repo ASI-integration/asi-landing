@@ -811,7 +811,11 @@ done
 echo 'ASI_SEED_DEVICE_DETACHED_BEFORE_JOB' >/dev/ttyS0
 __HOOK__
 set +e
-runuser -u runner -- env http_proxy="$PROXY" https_proxy="$PROXY" HTTP_PROXY="$PROXY" HTTPS_PROXY="$PROXY" NODE_OPTIONS=--require=/usr/local/lib/asi-ci/github-fetch-proxy.cjs ./run.sh
+runner_env=(http_proxy="$PROXY" https_proxy="$PROXY" HTTP_PROXY="$PROXY" HTTPS_PROXY="$PROXY" NODE_OPTIONS=--require=/usr/local/lib/asi-ci/github-fetch-proxy.cjs)
+if [[ -n "${ACTIONS_RUNNER_HOOK_JOB_STARTED:-}" ]]; then
+  runner_env+=(ACTIONS_RUNNER_HOOK_JOB_STARTED="$ACTIONS_RUNNER_HOOK_JOB_STARTED")
+fi
+runuser -u runner -- env "${runner_env[@]}" ./run.sh
 code=$?
 set -e
 echo "ASI_RUNNER_ONE_JOB_EXIT_CODE=$code" >/dev/ttyS0
@@ -821,7 +825,24 @@ hook=''
 label_args='--labels '+LABELS
 if MODE=='run-one':
     label_args='--no-default-labels --labels '+LABELS
-    hook='''install -d -o root -g root -m 0755 /usr/local/lib/asi-ci
+    hook='''install -d -o root -g root -m 0755 /usr/local/lib/asi-ci /run/asi-ci
+rm -f -- /run/asi-ci/assigned-job.fifo
+mkfifo -m 0620 /run/asi-ci/assigned-job.fifo
+chown root:runner /run/asi-ci/assigned-job.fifo
+# Root copies one hook line to the host serial device, then removes the fifo.
+(
+  IFS= read -r line < /run/asi-ci/assigned-job.fifo || exit 0
+  rm -f -- /run/asi-ci/assigned-job.fifo
+  case "$line" in
+    'ASI_ASSIGNED_JOB_MATCH user=runner uid='*)
+      uid=${line#ASI_ASSIGNED_JOB_MATCH user=runner uid=}
+      case "$uid" in
+        ''|*[!0-9]*|0*) exit 0 ;;
+      esac
+      echo "$line" >/dev/ttyS0
+      ;;
+  esac
+) &
 cat > /usr/local/lib/asi-ci/verify-assigned-job.sh <<'HOOK'
 #!/bin/bash
 set -euo pipefail
@@ -844,7 +865,7 @@ if [[ "${GITHUB_EVENT_NAME:-}" == pull_request ]]; then
 else
   [[ "${GITHUB_SHA:-}" == "%s" ]] || { echo HEAD_MISMATCH; exit 97; }
 fi
-echo "ASI_ASSIGNED_JOB_MATCH user=$(id -un) uid=$(id -u)" >/dev/ttyS0
+echo "ASI_ASSIGNED_JOB_MATCH user=$(id -un) uid=$(id -u)" > /run/asi-ci/assigned-job.fifo
 HOOK
 chown root:root /usr/local/lib/asi-ci/verify-assigned-job.sh
 chmod 0755 /usr/local/lib/asi-ci/verify-assigned-job.sh
@@ -861,6 +882,11 @@ if MODE=='run-one':
     assert 'self-hosted' not in label_args
     assert 'chmod 0755 /usr/local/lib/asi-ci/verify-assigned-job.sh' in bootstrap
     assert 'merge_commit_sha' in bootstrap
+    assert 'assigned-job.fifo' in bootstrap
+    assert 'ACTIONS_RUNNER_HOOK_JOB_STARTED="$ACTIONS_RUNNER_HOOK_JOB_STARTED"' in bootstrap
+    assert 'dialout' not in bootstrap
+    hook_script=bootstrap.split("<<'HOOK'\n",1)[1].split('\nHOOK\n',1)[0]
+    assert '>/dev/ttyS0' not in hook_script
     assert LABELS=='asi-%s-%s-%s' % (RUN_ID, ATTEMPT, JOB_NAME)
 assert '__TOKEN__' not in bootstrap
 assert '__LABEL_ARGS__' not in bootstrap and '__HOOK__' not in bootstrap

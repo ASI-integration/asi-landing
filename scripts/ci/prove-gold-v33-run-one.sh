@@ -150,4 +150,69 @@ same=$?
 set -e
 test "$same" -eq 97
 grep -q MERGE_SHA_IS_PR_HEAD "$STATE/hook-same.err"
+
+# The helper above writes the match line to its own stdout. The guest hook
+# is the installer embedded in the launcher. Run that installer.
+python3 - "$LAUNCHER" "$STATE/guest-fragment.sh" "$SHA" "$STATE" <<'PY'
+import pathlib, sys
+launcher, dest, sha, state = sys.argv[1:]
+text = pathlib.Path(launcher).read_text(encoding="utf-8")
+start = text.index("hook='''") + len("hook='''")
+end = text.index("''' % (RUN_ID, ATTEMPT, JOB_NAME, HEAD, HEAD)", start)
+template = text[start:end]
+if "dialout" in template or "chmod 0666 /dev/ttyS0" in template:
+    raise SystemExit("runner serial privilege expanded")
+hook = template.split("<<'HOOK'\n", 1)[1].split("\nHOOK\n", 1)[0]
+if ">/dev/ttyS0" in hook:
+    raise SystemExit("hook still opens ttyS0")
+if "/run/asi-ci/assigned-job.fifo" not in hook:
+    raise SystemExit("hook does not use the root fifo")
+if 'ACTIONS_RUNNER_HOOK_JOB_STARTED="$ACTIONS_RUNNER_HOOK_JOB_STARTED"' not in text:
+    raise SystemExit("hook variable is not passed to run.sh")
+if template.count("%s") != 5:
+    raise SystemExit("unexpected format slots: %s" % template.count("%s"))
+formatted = template
+for value in ("40", "1", "source_validation", sha, sha):
+    formatted = formatted.replace("%s", value, 1)
+formatted = (formatted
+    .replace("/usr/local/lib/asi-ci", state + "/lib")
+    .replace("/run/asi-ci", state + "/run")
+    .replace("/dev/ttyS0", state + "/serial"))
+pathlib.Path(dest).write_text(formatted, encoding="utf-8")
+PY
+if [[ "$(id -u)" -eq 0 ]]; then
+  if ! getent group dialout >/dev/null; then groupadd dialout; fi
+  id runner >/dev/null 2>&1 || /usr/sbin/useradd --system --create-home --shell /bin/bash runner
+  /usr/sbin/gpasswd -d runner dialout >/dev/null 2>&1 || true
+  : > "$STATE/serial"
+  chown root:dialout "$STATE/serial"
+  chmod 0660 "$STATE/serial"
+  set +e
+  /usr/sbin/runuser -u runner -- bash -c 'echo forged > "$1"' bash "$STATE/serial"
+  denied=$?
+  set -e
+  test "$denied" -ne 0
+  PATH="/usr/sbin:/usr/bin:/bin${PATH:+:$PATH}"
+  # shellcheck disable=SC1091
+  source "$STATE/guest-fragment.sh"
+  grep -q 'ASI_HOOK_EXEC_AS_RUNNER user=runner' "$STATE/serial"
+  cat > "$STATE/event.json" <<EOF
+{"pull_request":{"head":{"sha":"$SHA"},"merge_commit_sha":"$MERGE"}}
+EOF
+  /usr/sbin/runuser -u runner -- env \
+    GITHUB_RUN_ID=40 GITHUB_RUN_ATTEMPT=1 GITHUB_JOB=source_validation \
+    GITHUB_EVENT_NAME=pull_request GITHUB_EVENT_PATH="$STATE/event.json" GITHUB_SHA="$MERGE" \
+    "$STATE/lib/verify-assigned-job.sh"
+  wait
+  grep -q 'ASI_ASSIGNED_JOB_MATCH user=runner uid=' "$STATE/serial"
+  if /usr/sbin/runuser -u runner -- bash -c 'echo forged > "$1"' bash "$STATE/serial"; then
+    echo 'runner wrote the serial device' >&2
+    exit 1
+  fi
+  if /usr/sbin/runuser -u runner -- bash -c 'echo late > "$1"' bash "$STATE/run/assigned-job.fifo"; then
+    echo 'fifo stayed writable after the hook line' >&2
+    exit 1
+  fi
+  test "$(grep -c 'ASI_ASSIGNED_JOB_MATCH user=runner uid=' "$STATE/serial")" -eq 1
+fi
 echo 'GOLD_V33_RUN_ONE_PROVED'

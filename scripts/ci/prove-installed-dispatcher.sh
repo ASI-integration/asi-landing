@@ -112,6 +112,16 @@ grep -q 'ubuntu-noble-docker-nodejs-actions-runner.qcow2' "$ROOT/usr/local/sbin/
 grep -q 'restrict=on' "$ROOT/usr/local/sbin/asi-landing-gold-v33.sh"
 grep -q 'token_courier.py' "$ROOT/usr/local/sbin/asi-landing-gold-v33.sh"
 grep -q 'github-fetch-proxy.cjs' "$ROOT/usr/local/sbin/asi-landing-gold-v33.sh"
+grep -q 'assigned-job.fifo' "$ROOT/usr/local/sbin/asi-landing-gold-v33.sh"
+grep -q 'ACTIONS_RUNNER_HOOK_JOB_STARTED="$ACTIONS_RUNNER_HOOK_JOB_STARTED"' "$ROOT/usr/local/sbin/asi-landing-gold-v33.sh"
+if grep -q 'ASI_ASSIGNED_JOB_MATCH user=$(id -un) uid=$(id -u)" >/dev/ttyS0' "$ROOT/usr/local/sbin/asi-landing-gold-v33.sh"; then
+  echo 'installed hook still opens the serial device' >&2
+  exit 1
+fi
+if grep -E 'usermod .*dialout|chmod 0666 /dev/ttyS0' "$ROOT/usr/local/sbin/asi-landing-gold-v33.sh"; then
+  echo 'runner serial privilege was added' >&2
+  exit 1
+fi
 grep -q 'device_del' "$ROOT/usr/local/sbin/asi-landing-gold-v33.sh"
 grep -q 'gold-v32' "$ROOT/etc/asi/ephemeral-dispatcher.env"
 grep -q 'asi-landing-gold-v33.sh' "$ROOT/etc/asi/ephemeral-dispatcher.env"
