@@ -16,8 +16,37 @@ OUT=$STATE/out.txt
 GH_LOG=$STATE/gh.log
 SHA=$(python3 -c 'print("a"*40)')
 MAIN=$(python3 -c 'print("b"*40)')
+diagnose() {
+  local dest
+  dest=$(mktemp /tmp/asi-installed-dispatcher-diagnose.XXXXXXXX.txt)
+  {
+    echo "=== asi installed dispatcher diagnose $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+    echo "saved=$dest"
+    id || true
+    echo "gold=$(stat -c '%u:%g:%a %F' "$GOLD" 2>&1 || true)"
+    echo "node=$(${NODE:-node} -v 2>&1 || true)"
+    echo "--- seal.out ---"; cat "$STATE/seal.out" 2>/dev/null || true
+    echo "--- seal.err ---"; cat "$STATE/seal.err" 2>/dev/null || true
+    echo "--- serve.out ---"; cat "$STATE/serve.out" 2>/dev/null || true
+    echo "--- serve.err ---"; cat "$STATE/serve.err" 2>/dev/null || true
+    echo "--- second.out ---"; cat "$STATE/second.out" 2>/dev/null || true
+    echo "--- second.err ---"; cat "$STATE/second.err" 2>/dev/null || true
+  } >"$dest" 2>&1 || true
+  cat "$dest" >&2 || true
+}
 cleanup() { rm -rf -- "$ROOT" "$BIN" "$WORK" "$STATE"; }
 trap cleanup EXIT
+# An unprivileged user cannot enter a mount namespace directly. A user
+# namespace maps that user's fixture to uid 0 so the production seal check
+# sees a root-owned 0444 image, then mount --bind can replace meminfo.
+# Outside that namespace the same fixture stays non-root and must be blocked.
+ns_unshare() {
+  if [[ "$(id -u)" -eq 0 ]]; then
+    unshare --mount "$@"
+  else
+    unshare --user --map-root-user --mount "$@"
+  fi
+}
 
 python3 - "$LEDGER" <<'PY'
 import sqlite3, sys
@@ -143,7 +172,7 @@ grep -q 'User=administrator' "$ROOT/etc/systemd/system/asi-ephemeral-dispatcher.
 grep -q 'ASI_DISPATCHER_EXECUTE=NO' "$ROOT/etc/asi/ephemeral-dispatcher.env"
 
 bad=$("$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh" serve >"$STATE/bad.out" 2>"$STATE/bad.err" || true)
-grep -q PAID_CALLS_BLOCK "$STATE/bad.out" || { echo 'LEDGER_BLOCK_MISSING'; cat "$STATE/bad.out" "$STATE/bad.err"; exit 1; }
+grep -q PAID_CALLS_BLOCK "$STATE/bad.out" || { echo 'LEDGER_BLOCK_MISSING' >&2; cat "$STATE/bad.out" "$STATE/bad.err" >&2; diagnose; exit 1; }
 test ! -s "$OUT"
 python3 - "$LEDGER" <<'PY'
 import sqlite3, sys
@@ -179,7 +208,8 @@ python3 -c 'import os,sys; os.execv("/bin/sleep", ["qemu-system-x86_64", "30", s
 guest_pid=$!
 sleep 0.2
 "$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh" recover >/dev/null
-if kill -0 "$guest_pid" 2>/dev/null; then echo 'GUEST_STILL_RUNNING' >&2; exit 1; fi
+if kill -0 "$guest_pid" 2>/dev/null; then echo 'GUEST_STILL_RUNNING' >&2; diagnose; exit 1; fi
+wait "$guest_pid" || true
 test ! -e "$WORK/guest/disk.qcow2"
 test ! -e "$WORK/guest/seed.iso"
 test ! -e "$WORK/run-40-1-source_validation/guest-1/disk.qcow2"
@@ -203,16 +233,42 @@ test ! -s "$STARTED_MARK"
 grep -q UNAUTHORIZED_JOB "$STATE/unauth.out" "$STATE/unauth.err"
 rm -f -- "$binding"
 printf 'MemAvailable:    8388608 kB\n' > "$STATE/meminfo"
+export ASI_MEMINFO_FILE=$STATE/meminfo
+export ASI_DISPATCHER=$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh
+cat > "$STATE/serve-isolated.sh" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+gold_stat=$(stat -c '%u:%a' "$ASI_GOLD_IMAGE")
+if [[ "$gold_stat" != 0:444 || -L "$ASI_GOLD_IMAGE" ]]; then
+  echo "GOLD_FIXTURE_NOT_ROOT_SEALED stat=$gold_stat" >&2
+  exit 1
+fi
+mount --bind "$ASI_MEMINFO_FILE" /proc/meminfo
+grep -q '^MemAvailable:[[:space:]]*8388608 kB$' /proc/meminfo || { echo MEMINFO_BIND_FAILED >&2; exit 1; }
+exec "$ASI_DISPATCHER" serve
+EOF
+chmod 0755 "$STATE/serve-isolated.sh"
+if [[ "$(id -u)" -ne 0 ]]; then
+  set +e
+  "$ASI_DISPATCHER" serve >"$STATE/seal.out" 2>"$STATE/seal.err"
+  seal=$?
+  set -e
+  if [[ "$seal" -eq 0 ]] || ! grep -q GOLD_SEAL_BLOCK "$STATE/seal.out"; then
+    echo 'GOLD_SEAL_NOT_ENFORCED' >&2
+    diagnose
+    exit 1
+  fi
+fi
 export HOLD_FILE=1 STARTED=$STATE/started RELEASE=$STATE/release
-unshare --mount bash -c "mount --bind '$STATE/meminfo' /proc/meminfo && exec '$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh' serve" >"$STATE/serve.out" 2>"$STATE/serve.err" &
+ns_unshare "$STATE/serve-isolated.sh" >"$STATE/serve.out" 2>"$STATE/serve.err" &
 holder=$!
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
   [[ -f "$STARTED_MARK" ]] && break
   sleep 0.2
 done
 if [[ ! -s "$STARTED_MARK" ]]; then
-  echo 'LAUNCHER_NOT_STARTED'
-  cat "$STATE/serve.out" "$STATE/serve.err" || true
+  echo 'LAUNCHER_NOT_STARTED' >&2
+  diagnose
   exit 1
 fi
 grep -q LAUNCHER_STARTED "$STARTED_MARK"
@@ -222,11 +278,14 @@ grep -q 'status=pending' "$GH_LOG"
 grep -q 'actions/runs/40/jobs' "$GH_LOG"
 if grep -q registration-token "$GH_LOG"; then echo 'token request' >&2; exit 1; fi
 set +e
-unshare --mount bash -c "mount --bind '$STATE/meminfo' /proc/meminfo && exec '$ROOT/usr/local/sbin/asi-ephemeral-dispatcher.sh' serve" >"$STATE/second.out" 2>"$STATE/second.err"
+ns_unshare "$STATE/serve-isolated.sh" >"$STATE/second.out" 2>"$STATE/second.err"
 second=$?
 set -e
-test "$second" -eq 2
-grep -q SLOT_BUSY "$STATE/second.err"
+if [[ "$second" -ne 2 ]] || ! grep -q SLOT_BUSY "$STATE/second.err"; then
+  echo 'SLOT_NOT_BUSY' >&2
+  diagnose
+  exit 1
+fi
 test "$(wc -l < "$OUT")" -eq 1
 : > "$RELEASE"
 wait "$holder"
