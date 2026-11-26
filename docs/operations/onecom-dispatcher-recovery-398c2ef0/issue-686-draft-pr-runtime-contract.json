@@ -1,20 +1,23 @@
 {
   "taskId": "onecom-issue-686-draft-pr-cycle",
-  "action": "repository_or_environment_settings_change",
+  "action": "payment_or_financial_operation",
   "target": "ASI-integration/asi-landing",
   "identity": {
     "ref": "refs/heads/main",
     "sha": "398c2ef0c2432aff8e841cc3f8075794c869a82a",
-    "recordId": "exact-sha=39b75b7770fce0297954f7e24418dbe5f08c0ce7;package-sha256=cbf301ac7bf9663daf72a5a6081aa2b2622b52ec778feee3899fdad629e883b7;scenario-sha256=1f80857c356067054671b855e4e24f131436a50c7fea5658adbaf3d892e568fc"
+    "recordId": "exact-sha=39b75b7770fce0297954f7e24418dbe5f08c0ce7;package-sha256=cbf301ac7bf9663daf72a5a6081aa2b2622b52ec778feee3899fdad629e883b7;scenario-sha256=1f80857c356067054671b855e4e24f131436a50c7fea5658adbaf3d892e568fc;permit-sha256=709c640e688927fa92492196f926ca814b0f052f24103d4c9e4ea9e66fa5d87c;reset-sha256=2bdb9b839ed64fb47f98aee167e31252abc8b8f1b59d37ff50b01651a0cc86c9"
   },
-  "allowedSideEffect": "Prepare one Issue #686 cycle that ends in an unmerged draft PR for exact recovery commit 39b75b7770fce0297954f7e24418dbe5f08c0ce7 package SHA256 cbf301ac7bf9663daf72a5a6081aa2b2622b52ec778feee3899fdad629e883b7 scenario SHA256 1f80857c356067054671b855e4e24f131436a50c7fea5658adbaf3d892e568fc on protected main 398c2ef0c2432aff8e841cc3f8075794c869a82a. This missing gate does not authorize that cycle. Do not set ASI_DISPATCHER_EXECUTE. Do not set ASI_PAID_CALLS_ENABLED. Do not change the spend cap. Do not remove HOLD from Issue #686. Do not rebuild Gold. Do not reboot the VPS. Do not install or restart the dispatcher in this gate.",
+  "allowedSideEffect": "One-time signed permit for worker 5 to capture Issue #686, run CODEX, run the local test, run INDEPENDENT_REVIEW, and publish exactly one unmerged draft PR. Maximum total spend is 6400 kopecks. automatic_retry=false. api_fallback=false. Model effects are only CODEX and INDEPENDENT_REVIEW. Check the current Cloud.ru balance and fail closed when a required environment variable is missing. Bound to recovery exact SHA 39b75b7770fce0297954f7e24418dbe5f08c0ce7, package SHA256 cbf301ac7bf9663daf72a5a6081aa2b2622b52ec778feee3899fdad629e883b7, and scenario SHA256 1f80857c356067054671b855e4e24f131436a50c7fea5658adbaf3d892e568fc on protected main 398c2ef0c2432aff8e841cc3f8075794c869a82a. While this gate is missing, the permit is not authorized and the live cap stays 0. After an explicit approval, the one-shot may raise the ledger cap to 6400 kopecks only inside that process and must restore cap 0, paused 0, call count 0, ASI_PAID_CALLS_ENABLED=NO, ASI_DISPATCHER_EXECUTE=NO, and HOLD on every outcome, including failure and reboot. Do not merge. Do not rebuild Gold. Do not reboot the VPS. Do not change the installed recovery helper.",
   "postActionVerification": [
-    "The draft PR is open and unmerged.",
-    "ASI_DISPATCHER_EXECUTE remains NO.",
-    "ASI_PAID_CALLS_ENABLED remains NO and the spend cap remains 0.",
-    "Issue #686 remains HOLD.",
-    "The sealed Gold image is unchanged."
+    "Exactly one draft PR is open and unmerged, and no merge was performed.",
+    "The capturing worker was slot 5.",
+    "The only model effects were CODEX and INDEPENDENT_REVIEW, automatic_retry stayed false, and api_fallback stayed false.",
+    "The current Cloud.ru balance was checked before spend, and the spend did not exceed 6400 kopecks.",
+    "The ledger cap, paused flag, and call count are restored to 0 on every outcome, including failure and reboot.",
+    "ASI_DISPATCHER_EXECUTE is NO and ASI_PAID_CALLS_ENABLED is NO.",
+    "Issue #686 is HOLD.",
+    "The sealed Gold image is unchanged and the VPS was not rebooted by this permit."
   ],
-  "scope": "One Issue #686 cycle through an unmerged draft PR. Do not set ASI_DISPATCHER_EXECUTE. Do not set ASI_PAID_CALLS_ENABLED. Do not change the spend cap. Do not remove HOLD. Do not rebuild Gold. Do not reboot the VPS.",
-  "taskCycle": "onecom-issue-686-draft-pr-cycle-1"
+  "scope": "One-time signed Issue #686 cycle for worker 5: capture, CODEX, local test, INDEPENDENT_REVIEW, and one unmerged draft PR. Maximum spend 6400 kopecks. automatic_retry=false. api_fallback=false. Model effects are only CODEX and INDEPENDENT_REVIEW. Check the current Cloud.ru balance and fail closed when required environment variables are missing. On every outcome, including failure and reboot, restore cap 0, ASI_PAID_CALLS_ENABLED=NO, ASI_DISPATCHER_EXECUTE=NO, and HOLD. Do not merge. Do not rebuild Gold. Do not reboot the VPS.",
+  "taskCycle": "onecom-issue-686-one-shot-cycle-1"
 }

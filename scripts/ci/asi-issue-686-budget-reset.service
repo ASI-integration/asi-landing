@@ -1,0 +1,11 @@
+[Unit]
+Description=Return the Issue 686 one-shot budget to zero after reboot
+ConditionPathExists=/var/lib/asi/issue-686-permit.stamp
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/asi-issue-686-budget-reset --reset-only
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
