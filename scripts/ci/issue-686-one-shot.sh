@@ -10,6 +10,7 @@ CONTRACT=$REPO/docs/operations/onecom-dispatcher-recovery-398c2ef0/issue-686-ada
 ENV_FILE=$HERE/asi-p1-686-one-shot.env
 UNIT=$HERE/asi-issue-686-budget-reset.service
 SERVICE=$HERE/asi-p1-686-one-shot.service
+ATTEST=$HERE/owner-attested-balance.py
 ADAPTER=$HERE/issue-686-adapters.py
 MAX_KOPECKS=6400
 GOLD_BYTES=42949672960
@@ -92,9 +93,9 @@ if [[ "$NO_SPEND" == 1 ]]; then
   exit 0
 fi
 
-reason=$(python3 - "$GATE" "$CONTRACT" "$HERE/issue-686-one-shot.sh" "$ADAPTER" "$ENV_FILE" "$UNIT" "$SERVICE" <<'PY'
+reason=$(python3 - "$GATE" "$CONTRACT" "$HERE/issue-686-one-shot.sh" "$ADAPTER" "$ENV_FILE" "$UNIT" "$SERVICE" "$ATTEST" <<'PY'
 import hashlib, json, sys
-gate, contract, script, adapter, env_file, unit, service = sys.argv[1:]
+gate, contract, script, adapter, env_file, unit, service, attest = sys.argv[1:]
 try:
     gate_doc = json.load(open(gate, encoding='utf-8'))
     contract_doc = json.load(open(contract, encoding='utf-8'))
@@ -121,6 +122,7 @@ checks = {
     'env-sha256': env_file,
     'reset-sha256': unit,
     'service-sha256': service,
+    'attestation-sha256': attest,
 }
 for key, path in checks.items():
     if hashlib.sha256(open(path, 'rb').read()).hexdigest() != rec.get(key):
@@ -135,7 +137,18 @@ PY
 [[ -n "${ASI_SPEND_LEDGER:-}" && -n "${ASI_GOLD_IMAGE:-}" && -n "${ASI_RUNTIME_ROOT:-}" ]] || fail ENV_MISSING
 # The signed owner gate is the authorization. Do not synthesize the absent file.
 [[ ! -e /etc/asi/p1-686-authorization ]] || fail AUTHORIZATION_FILE_PRESENT
-run_adapter balance
+set +e
+api_balance=$(run_adapter balance 2>&1)
+api_status=$?
+set -e
+ATTESTED=0
+NEED_ATTEST=0
+if [[ "$api_status" -eq 0 ]]; then
+  printf '%s\n' "$api_balance"
+else
+  [[ "$api_balance" == *AUTHENTICATED_CLOUDRU_BALANCE_CONNECTOR_NOT_CONFIGURED* ]] || fail CLOUDRU_BALANCE
+  NEED_ATTEST=1
+fi
 
 [[ -f "$ASI_GOLD_IMAGE" && ! -L "$ASI_GOLD_IMAGE" ]] || fail GOLD_CHANGED
 gold_stamp=$(stat -c '%u:%g:%a:%i' -- "$ASI_GOLD_IMAGE")
@@ -156,6 +169,17 @@ if row is None or int(row[0]) != 0 or int(row[1]) != 0 or int(calls) != 0 or 'id
 PY
 then
   fail LEDGER
+fi
+
+if [[ "$NEED_ATTEST" == 1 ]]; then
+  exact_sha=$(git -C "$REPO" rev-parse HEAD)
+  attest_sha=$(python3 - "$ATTEST" <<'PY'
+import hashlib, sys
+print(hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest())
+PY
+)
+  python3 "$ATTEST" admit-start --attestation "${ASI_OWNER_ATTESTED_BALANCE:-/etc/asi/owner-attested-balance.json}" --gate "$GATE" --ledger "$ASI_SPEND_LEDGER" --state /var/lib/asi/issue-686-attestation.json --attestation-sha256 "$attest_sha" --exact-sha "$exact_sha" --paid "$ASI_PAID_CALLS_ENABLED" --execute "$ASI_DISPATCHER_EXECUTE"
+  ATTESTED=1
 fi
 
 stamp=/var/lib/asi/issue-686-permit.stamp
@@ -195,8 +219,17 @@ with sqlite3.connect(Path(ledger).resolve().as_uri(), uri=True) as db:
     db.commit()
 PY
 run_adapter capture
+if [[ "$ATTESTED" == 1 ]]; then
+  python3 "$ATTEST" admit-call --state /var/lib/asi/issue-686-attestation.json --effect CODEX
+fi
 run_adapter codex
 run_adapter local-ci
+if [[ "$ATTESTED" == 1 ]]; then
+  python3 "$ATTEST" admit-call --state /var/lib/asi/issue-686-attestation.json --effect INDEPENDENT_REVIEW
+fi
 run_adapter review
 run_adapter draft-pr
+if [[ "$ATTESTED" == 1 ]]; then
+  python3 "$ATTEST" reconcile --state /var/lib/asi/issue-686-attestation.json --ledger "$ASI_SPEND_LEDGER"
+fi
 echo ISSUE_686_ONE_SHOT_OK

@@ -1,0 +1,13 @@
+{
+  "kind": "OWNER_ATTESTED_BALANCE",
+  "source": "owner_cabinet",
+  "apiBalance": false,
+  "issue": 686,
+  "worker": 5,
+  "budgetKopecks": 6400,
+  "reserveKopecks": 3200,
+  "monetaryBalanceKopecks": null,
+  "grantBonusKopecks": null,
+  "observedAt": null,
+  "exactSha": null
+}
